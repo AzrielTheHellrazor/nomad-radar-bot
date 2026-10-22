@@ -1,0 +1,460 @@
+from typing import Dict, List, Optional
+from models import CountryRule, TravelMode, VisaCategory
+
+
+CITY_NAMES_TR: Dict[str, str] = {
+    "LIS": "Lizbon",
+    "OPO": "Porto",
+    "FCO": "Roma",
+    "MXP": "Milano",
+    "VCE": "Venedik",
+    "BLQ": "Bologna",
+    "NAP": "Napoli",
+    "BCN": "Barselona",
+    "MAD": "Madrid",
+    "SVQ": "Sevilla",
+    "CDG": "Paris",
+    "LYS": "Lyon",
+    "NCE": "Nice",
+    "AMS": "Amsterdam",
+    "EIN": "Eindhoven",
+    "BER": "Berlin",
+    "MUC": "Münih",
+    "CGN": "Köln",
+    "VIE": "Viyana",
+    "BUD": "Budapeşte",
+    "PRG": "Prag",
+    "WAW": "Varşova",
+    "KRK": "Krakow",
+    "ATH": "Atina",
+    "SKG": "Selanik",
+    "RHO": "Rodos",
+    "JMK": "Mikonos / Sakız-Midilli",
+    "SJJ": "Saraybosna",
+    "BEG": "Belgrad",
+    "TGD": "Podgorica (Karadağ)",
+    "TIV": "Tivat / Kotor",
+    "TIA": "Tiran",
+    "SKP": "Üsküp",
+    "OHD": "Ohrid",
+    "TBS": "Tiflis",
+    "BUS": "Batum",
+    "SSH": "Şarm El-Şeyh",
+    "RAK": "Marakeş",
+    "CMN": "Kazablanka",
+    "BKK": "Bangkok",
+    "HKT": "Phuket",
+    "NRT": "Tokyo",
+    "ICN": "Seul",
+    "LHR": "Londra",
+    "DUB": "Dublin",
+}
+
+
+class VisaEngine:
+    """
+    Yeşil Pasaport (Solo Mod) ve Yeşil + Bordo Pasaport (Çift Modu) için
+    vize uygunluğunu, randevu yetişme süresini ve vize başvuru maliyetlerini hesaplar.
+    """
+
+    def __init__(self) -> None:
+        self._countries: Dict[str, CountryRule] = {
+            # --- SCHENGEN ÜLKELERİ (Yeşil Pasaporta VİZESİZ 0€, Bordo Pasaporta Schengen Vizeli) ---
+            "PT": CountryRule(
+                code="PT",
+                name_tr="Portekiz",
+                main_cities=["LIS", "OPO"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,  # Bordo için 90€ Schengen + 30€ aracı kurum
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=460.0,
+            ),
+            "IT": CountryRule(
+                code="IT",
+                name_tr="İtalya",
+                main_cities=["FCO", "MXP", "BLQ", "VCE", "NAP"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=390.0,
+            ),
+            "ES": CountryRule(
+                code="ES",
+                name_tr="İspanya",
+                main_cities=["BCN", "MAD", "SVQ"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=430.0,
+            ),
+            "FR": CountryRule(
+                code="FR",
+                name_tr="Fransa",
+                main_cities=["CDG", "LYS", "NCE"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=450.0,
+            ),
+            "NL": CountryRule(
+                code="NL",
+                name_tr="Hollanda",
+                main_cities=["AMS", "EIN"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=440.0,
+            ),
+            "DE": CountryRule(
+                code="DE",
+                name_tr="Almanya",
+                main_cities=["BER", "MUC", "CGN"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=380.0,
+            ),
+            "AT": CountryRule(
+                code="AT",
+                name_tr="Avusturya",
+                main_cities=["VIE"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=390.0,
+            ),
+            "HU": CountryRule(
+                code="HU",
+                name_tr="Macaristan",
+                main_cities=["BUD"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=330.0,
+            ),
+            "CZ": CountryRule(
+                code="CZ",
+                name_tr="Çekya",
+                main_cities=["PRG"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=360.0,
+            ),
+            "PL": CountryRule(
+                code="PL",
+                name_tr="Polonya",
+                main_cities=["WAW", "KRK"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=320.0,
+            ),
+            "GR": CountryRule(
+                code="GR",
+                name_tr="Yunanistan (Anakara)",
+                main_cities=["ATH", "SKG"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=120.0,
+                couple_min_lead_days=45,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=310.0,
+            ),
+            # --- ÇİFT MODU & SOLO MOD ORTAK VİZESİZ / KAPIDA VİZE ÜLKELERİ ---
+            "GR_ISLANDS": CountryRule(
+                code="GR_ISLANDS",
+                name_tr="Yunan Adaları (Rodos / Midilli / Sakız / Kos)",
+                main_cities=["RHO", "JMK"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_ON_ARRIVAL_OR_E_VISA,
+                couple_visa_fee_eur=80.0,  # Yeşil: 0€, Bordo: 80€ Kapıda Ekspres Vize
+                couple_min_lead_days=7,
+                visa_group="SCHENGEN",
+                typical_package_Baseline_eur=340.0,
+            ),
+            "ME": CountryRule(
+                code="ME",
+                name_tr="Karadağ (Montenegro)",
+                main_cities=["TGD", "TIV"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=310.0,
+            ),
+            "RS": CountryRule(
+                code="RS",
+                name_tr="Sırbistan",
+                main_cities=["BEG"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=300.0,
+            ),
+            "BA": CountryRule(
+                code="BA",
+                name_tr="Bosna-Hersek",
+                main_cities=["SJJ"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=280.0,
+            ),
+            "AL": CountryRule(
+                code="AL",
+                name_tr="Arnavutluk",
+                main_cities=["TIA"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=270.0,
+            ),
+            "MK": CountryRule(
+                code="MK",
+                name_tr="Kuzey Makedonya",
+                main_cities=["SKP", "OHD"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=260.0,
+            ),
+            "GE": CountryRule(
+                code="GE",
+                name_tr="Gürcistan (Kimlikle Giriş)",
+                main_cities=["TBS", "BUS"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=260.0,
+            ),
+            "EG_SHARM": CountryRule(
+                code="EG_SHARM",
+                name_tr="Mısır (Şarm El-Şeyh)",
+                main_cities=["SSH"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,  # Sina yarımadası kapıda ücretsiz/vizesiz
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=380.0,
+            ),
+            "MA": CountryRule(
+                code="MA",
+                name_tr="Fas",
+                main_cities=["RAK", "CMN"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=430.0,
+            ),
+            "TH": CountryRule(
+                code="TH",
+                name_tr="Tayland",
+                main_cities=["BKK", "HKT"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=780.0,
+            ),
+            "JP": CountryRule(
+                code="JP",
+                name_tr="Japonya",
+                main_cities=["NRT"],
+                solo_visa=VisaCategory.VISA_FREE,
+                solo_visa_fee_eur=0.0,
+                solo_min_lead_days=0,
+                couple_visa=VisaCategory.VISA_FREE,
+                couple_visa_fee_eur=0.0,
+                couple_min_lead_days=0,
+                visa_group="NONE",
+                typical_package_Baseline_eur=950.0,
+            ),
+            # --- YEŞİL PASAPORTA DA VİZE İSTEYEN ÜLKELER (Örn: İngiltere, İrlanda) ---
+            "GB": CountryRule(
+                code="GB",
+                name_tr="İngiltere (Birleşik Krallık)",
+                main_cities=["LHR"],
+                solo_visa=VisaCategory.VISA_REQUIRED,
+                solo_visa_fee_eur=135.0,  # UK Standard Visitor Visa (~115 GBP -> ~135 EUR)
+                solo_min_lead_days=35,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=270.0,  # 2 Kişi UK vizesi
+                couple_min_lead_days=35,
+                visa_group="UK",
+                typical_package_Baseline_eur=480.0,
+            ),
+            "IE": CountryRule(
+                code="IE",
+                name_tr="İrlanda",
+                main_cities=["DUB"],
+                solo_visa=VisaCategory.VISA_REQUIRED,
+                solo_visa_fee_eur=95.0,
+                solo_min_lead_days=35,
+                couple_visa=VisaCategory.VISA_REQUIRED,
+                couple_visa_fee_eur=190.0,
+                couple_min_lead_days=35,
+                visa_group="IRELAND",
+                typical_package_Baseline_eur=460.0,
+            ),
+        }
+
+    def get_country(self, code: str) -> Optional[CountryRule]:
+        return self._countries.get(code.upper().strip())
+
+    def list_all_countries(self) -> List[CountryRule]:
+        return list(self._countries.values())
+
+    def get_city_name_tr(self, city_code: str) -> str:
+        return CITY_NAMES_TR.get(city_code.upper(), city_code.upper())
+
+    def evaluate_destination(
+        self,
+        country_code: str,
+        mode: TravelMode,
+        days_until_trip: int,
+        solo_visas: List[str],
+        couple_visas: List[str],
+    ) -> dict:
+        rule = self.get_country(country_code)
+        if not rule:
+            return {"eligible": False, "visa_cost_eur": 0.0, "visa_note": "Bilinmeyen ülke"}
+
+        solo_visas_norm = [v.upper() for v in solo_visas]
+        couple_visas_norm = [v.upper() for v in couple_visas]
+
+        if mode == TravelMode.SOLO:
+            # 1. Vizesiz veya kullanıcının halihazırda vizesi var mı?
+            if rule.solo_visa == VisaCategory.VISA_FREE or rule.visa_group in solo_visas_norm or rule.code in solo_visas_norm:
+                return {
+                    "eligible": True,
+                    "visa_cost_eur": 0.0,
+                    "visa_note": "✅ Yeşil Pasaporta Vizesiz (0€)",
+                }
+            # 2. E-vize / Kapıda vize
+            if rule.solo_visa == VisaCategory.VISA_ON_ARRIVAL_OR_E_VISA:
+                if days_until_trip >= rule.solo_min_lead_days:
+                    return {
+                        "eligible": True,
+                        "visa_cost_eur": rule.solo_visa_fee_eur,
+                        "visa_note": f"🛂 Kapıda/E-Vize (+{rule.solo_visa_fee_eur:.0f}€ bütçeye dahil)",
+                    }
+                return {"eligible": False, "visa_cost_eur": 0.0, "visa_note": "E-vize süresi yetişmiyor"}
+            # 3. Randevulu vize (Örn. İngiltere) -> İleri tarihliyse randevu alınabilir ve ücreti eklenir!
+            if days_until_trip >= rule.solo_min_lead_days:
+                return {
+                    "eligible": True,
+                    "visa_cost_eur": rule.solo_visa_fee_eur,
+                    "visa_note": f"🛂 Randevulu Vize Gerekli (+{rule.solo_visa_fee_eur:.0f}€ vize ücreti toplama eklendi, seyahate {days_until_trip} gün var)",
+                }
+            return {
+                "eligible": False,
+                "visa_cost_eur": rule.solo_visa_fee_eur,
+                "visa_note": f"Vize randevusu için süre kısa ({days_until_trip} < {rule.solo_min_lead_days} gün)",
+            }
+
+        # COUPLE MODE (Yeşil + Bordo Pasaport - Vize Sorunu Yaşanmayacak Mod)
+        if rule.couple_visa == VisaCategory.VISA_FREE:
+            return {
+                "eligible": True,
+                "visa_cost_eur": 0.0,
+                "visa_note": "✅ Yeşil + Bordo Pasaporta Vizesiz (0€ - Vize Sorunu Yok!)",
+            }
+
+        if rule.visa_group in couple_visas_norm or rule.code in couple_visas_norm:
+            return {
+                "eligible": True,
+                "visa_cost_eur": 0.0,
+                "visa_note": f"✅ Yeşil Pasaport Vizesiz + Partnerin {rule.visa_group} Vizesi Mevcut (0€ Ek Maliyet)",
+            }
+
+        if rule.couple_visa == VisaCategory.VISA_ON_ARRIVAL_OR_E_VISA and days_until_trip >= rule.couple_min_lead_days:
+            return {
+                "eligible": True,
+                "visa_cost_eur": rule.couple_visa_fee_eur,
+                "visa_note": f"🛂 Yeşil Pasaporta 0€, Bordo Pasaporta Kapıda/E-Vize (+{rule.couple_visa_fee_eur:.0f}€ toplama eklendi)",
+            }
+
+        # Çift modunda "vize sorunu yaşamayacağımız" kuralı gereği randevulu Schengen/UK (eğer vize yoksa) elenir
+        return {
+            "eligible": False,
+            "visa_cost_eur": rule.couple_visa_fee_eur,
+            "visa_note": "Çift modunda Bordo pasaport için randevulu vize gerekiyor",
+        }
