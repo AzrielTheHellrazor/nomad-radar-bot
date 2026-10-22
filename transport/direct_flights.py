@@ -55,11 +55,15 @@ DIRECT_ROUTE_PROFILES: Dict[str, Tuple[str, str, float]] = {
 }
 
 
+_LIVE_FLIGHT_CACHE: Dict[str, List[RouteOption]] = {}
+
+
 class DirectFlightScanner:
     """
     İstanbul (IST / SAW) çıkışlı direkt veya 1 konforlu aktarmalı uçuşları tarar.
-    Eğer TEQUILA_API_KEY tanımlıysa canlı Kiwi/Tequila API sorgular; aksi halde
-    gerçekçi kampanya/sezon katsayılı uçuş modeli üretir.
+    Varsayılan olarak (`LIVE_FLIGHTS_HTTP=1`) doğrudan Google Flights (`fast-flights`)
+    üzerinden %100 gerçek anlık fiyatları çeker ve uydurma/sabit fiyat DÖNDÜRMEZ.
+    Sadece birim testlerinde (`LIVE_FLIGHTS_HTTP=0`) çevrimdışı test verisi kullanır.
     """
 
     async def search_direct_or_one_stop(
@@ -71,11 +75,9 @@ class DirectFlightScanner:
             if live:
                 return live
 
-        # Tequila API key yoksa bile Kiwi Umbrella GraphQL veya Google Flights (fast-flights) ile anahtarsız sorgu
-        if os.getenv("LIVE_FLIGHTS_HTTP", "0") == "1":
-            keyless_live = await self._query_keyless_google_or_kiwi(window, code)
-            if keyless_live:
-                return keyless_live
+        # Varsayılan olarak (%100 Canlı Mod): Google Flights (fast-flights) üzerinden gerçek fiyatları çek!
+        if os.getenv("LIVE_FLIGHTS_HTTP", "1") == "1":
+            return await self._query_keyless_google_or_kiwi(window, code)
 
         carrier, origin_airport, base_one_way = DIRECT_ROUTE_PROFILES.get(
             code, ("Pegasus / AJet", "SAW", 95.0)
@@ -207,14 +209,20 @@ class DirectFlightScanner:
             import fast_flights
 
             origin_airport = DIRECT_ROUTE_PROFILES.get(city_code, ("", "SAW", 95.0))[1]
+            d_out_str = window.start_dt.strftime("%Y-%m-%d")
+            d_in_str = window.end_dt.strftime("%Y-%m-%d")
+            cache_key = f"{origin_airport}:{city_code}:{d_out_str}:{d_in_str}"
+            if cache_key in _LIVE_FLIGHT_CACHE:
+                return _LIVE_FLIGHT_CACHE[cache_key]
+
             earliest_hr = 13 if window.start_dt.hour == 13 else None
 
-            def _fetch_sync():
+            def _fetch_sync(orig: str):
                 q_out = fast_flights.create_query(
                     flights=[
                         fast_flights.FlightQuery(
-                            date=window.start_dt.strftime("%Y-%m-%d"),
-                            from_airport=origin_airport,
+                            date=d_out_str,
+                            from_airport=orig,
                             to_airport=city_code,
                             max_stops=1,
                             earliest_departure_hour=earliest_hr,
@@ -228,9 +236,9 @@ class DirectFlightScanner:
                 q_in = fast_flights.create_query(
                     flights=[
                         fast_flights.FlightQuery(
-                            date=window.end_dt.strftime("%Y-%m-%d"),
+                            date=d_in_str,
                             from_airport=city_code,
-                            to_airport=origin_airport,
+                            to_airport=orig,
                             max_stops=1,
                         )
                     ],
@@ -241,10 +249,17 @@ class DirectFlightScanner:
                 )
                 return fast_flights.get_flights(q_out), fast_flights.get_flights(q_in)
 
-            res_out, res_in = await asyncio.to_thread(_fetch_sync)
-            if res_out and res_in:
-                best_out = sorted(res_out, key=lambda x: getattr(x, "price", 9999))[0]
-                best_in = sorted(res_in, key=lambda x: getattr(x, "price", 9999))[0]
+            res_out, res_in = await asyncio.to_thread(_fetch_sync, origin_airport)
+            if (not res_out or not res_in) and origin_airport == "SAW":
+                origin_airport = "IST"
+                res_out, res_in = await asyncio.to_thread(_fetch_sync, "IST")
+
+            valid_out = [x for x in (res_out or []) if getattr(x, "price", 0) and getattr(x, "flights", None)]
+            valid_in = [x for x in (res_in or []) if getattr(x, "price", 0) and getattr(x, "flights", None)]
+
+            if valid_out and valid_in:
+                best_out = sorted(valid_out, key=lambda x: x.price)[0]
+                best_in = sorted(valid_in, key=lambda x: x.price)[0]
 
                 f_out = best_out.flights[0]
                 f_in = best_in.flights[0]
@@ -257,7 +272,7 @@ class DirectFlightScanner:
                 carrier_in = " / ".join(best_in.airlines) if best_in.airlines else "Google Flights"
                 stops = max(len(best_out.flights) - 1, len(best_in.flights) - 1)
 
-                return [
+                routes = [
                     RouteOption(
                         strategy_name=f"Google Flights Canlı ({carrier_out}: {origin_airport} ↔ {city_code})",
                         outbound_legs=[
@@ -286,11 +301,14 @@ class DirectFlightScanner:
                         max_stops=stops,
                         booking_hint_url=(
                             f"https://www.google.com/travel/flights?q=Flights%20to%20{city_code}%20from%20{origin_airport}%20on%20"
-                            f"{window.start_dt.strftime('%Y-%m-%d')}%20through%20{window.end_dt.strftime('%Y-%m-%d')}"
+                            f"{d_out_str}%20through%20{d_in_str}"
                         ),
                     )
                 ]
+                _LIVE_FLIGHT_CACHE[cache_key] = routes
+                return routes
         except Exception:
             pass
+        _LIVE_FLIGHT_CACHE[cache_key] = []
         return []
 

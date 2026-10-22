@@ -54,8 +54,11 @@ class BorderHopEngine:
 
         hub_code, lowcost_carrier, base_flight_eur = BALKAN_LOWCOST_HUBS[code]
 
-        # Canlı Ryanair API'den güncel en ucuz fiyatı çekmeyi dene, olmazsa kalibre edilmiş baz fiyatı kullan
+        # Canlı modda (%100 gerçek fiyat) Ryanair'de uçuş yoksa uydurma fiyat döndürme!
+        live_mode = os.getenv("LIVE_RYANAIR_HTTP", "1") == "1"
         live_price = await self._try_fetch_ryanair_fare(hub_code, code, window)
+        if live_mode and live_price is None:
+            return []
         one_way_flight_eur = live_price if live_price is not None else base_flight_eur
 
         hub_name = "Sofya (SOF)" if hub_code == "SOF" else "Selanik (SKG)"

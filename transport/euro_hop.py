@@ -1,3 +1,4 @@
+import os
 from typing import Dict, List, Tuple
 from models import RouteOption, TransportLeg, TravelWindow
 
@@ -22,6 +23,8 @@ class EuroHopEngine:
     def build_euro_hop_routes(
         self, window: TravelWindow, city_code: str
     ) -> List[RouteOption]:
+        if os.getenv("LIVE_FLIGHTS_HTTP", "1") == "1":
+            return []
         code = city_code.upper()
         if code not in EURO_HOP_CONNECTIONS:
             return []
