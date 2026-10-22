@@ -35,6 +35,12 @@ async def test_end_to_end_orchestrator_scan_and_telegram_formatting():
 
         for deal in found_deals:
             msg = format_deal_telegram_message(deal)
+            # Telegram HTML formatında olmalı, ham ** veya [link](url) içermemeli!
+            assert "<b>" in msg
+            assert "</b>" in msg
+            assert "<blockquote>" in msg
+            assert "**" not in msg
+            assert "](" not in msg
             if deal.mode == TravelMode.SOLO:
                 assert "SOLO" in msg
                 assert "0€" in msg
@@ -48,6 +54,8 @@ async def test_end_to_end_orchestrator_scan_and_telegram_formatting():
         )
         summary_text = format_holidays_summary(windows)
         assert "29 Ekim" in summary_text
+        assert "<b>" in summary_text
+        assert "**" not in summary_text
         assert "izin" in summary_text.lower()
 
 

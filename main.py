@@ -76,7 +76,7 @@ async def periodic_scan_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                     await context.bot.send_message(
                         chat_id=user.chat_id,
                         text=msg_text,
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                         disable_web_page_preview=True,
                     )
                 except BadRequest:
