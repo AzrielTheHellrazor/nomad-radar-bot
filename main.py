@@ -1,6 +1,9 @@
 import argparse
 import asyncio
+import os
+import tempfile
 from datetime import date
+from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 from bot.formatter import format_deal_telegram_message, format_holidays_summary
 from bot.scheduler import DealScanOrchestrator
@@ -20,54 +23,70 @@ async def run_demo_preview() -> None:
     Telegram token girmeden bile terminalden hem Solo (Yeşil Pasaport)
     hem de Çift (Yeşil + Bordo Pasaport) modlarının canlı çıktısını gösterir.
     """
-    db = Database(DATABASE_PATH)
-    db.init_db()
-    orchestrator = DealScanOrchestrator(db=db)
-    calc = HolidayWindowCalculator()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = Database(os.path.join(tmpdir, "demo_preview.db"))
+        db.init_db()
+        orchestrator = DealScanOrchestrator(db=db)
+        calc = HolidayWindowCalculator()
 
-    print("=" * 80)
-    print("🧭 NOMAD RADAR — TATİL, KÖPRÜ İZİN & ÇİFT MODLU UCUZ SEYAHAT MOTORU (CANLI ÖNİZLEME)")
-    print("=" * 80)
-    windows = calc.get_upcoming_windows(reference_date=date(2026, 10, 22), days_ahead=60)
-    print(format_holidays_summary(windows[:4]))
-    print("\n" + "=" * 80)
+        print("=" * 80)
+        print("🧭 NOMAD RADAR — TATİL, KÖPRÜ İZİN & ÇİFT MODLU UCUZ SEYAHAT MOTORU (CANLI ÖNİZLEME)")
+        print("=" * 80)
+        windows = calc.get_upcoming_windows(reference_date=date(2026, 10, 22), days_ahead=60)
+        print(format_holidays_summary(windows[:4]))
+        print("\n" + "=" * 80)
 
-    deals = await orchestrator.run_scan_for_user(
-        chat_id=1,
-        reference_date=date(2026, 10, 22),
-        days_ahead=30,
-        max_results_per_mode=2,
-        force_notify=True,
-    )
-    for idx, deal in enumerate(deals, start=1):
-        print(f"\n🔔 ÖRNEK TELEGRAM BİLDİRİMİ #{idx}:")
-        print("-" * 80)
-        print(format_deal_telegram_message(deal))
-        print("-" * 80)
+        deals = await orchestrator.run_scan_for_user(
+            chat_id=99999,
+            reference_date=date(2026, 10, 22),
+            days_ahead=30,
+            max_results_per_mode=2,
+            force_notify=True,
+        )
+        for idx, deal in enumerate(deals, start=1):
+            print(f"\n🔔 ÖRNEK TELEGRAM BİLDİRİMİ #{idx}:")
+            print("-" * 80)
+            print(format_deal_telegram_message(deal))
+            print("-" * 80)
 
 
 async def periodic_scan_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     db: Database = context.job.data["db"]
     orchestrator: DealScanOrchestrator = context.job.data["orchestrator"]
 
-    users = db.get_all_users()
-    if not users and DEFAULT_ADMIN_CHAT_ID:
+    users = [u for u in db.get_all_users() if u.chat_id > 10]
+    if not users and DEFAULT_ADMIN_CHAT_ID > 10:
         users = [db.get_user_settings(DEFAULT_ADMIN_CHAT_ID)]
 
+    if not users:
+        print("ℹ️ Henüz kayıtlı Telegram kullanıcısı yok. Botunuza Telegram'dan /start yazmanız bekleniyor...")
+        return
+
     for user in users:
-        deals = await orchestrator.run_scan_for_user(
-            chat_id=user.chat_id,
-            days_ahead=60,
-            max_results_per_mode=2,
-            force_notify=False,
-        )
-        for deal in deals:
-            await context.bot.send_message(
+        try:
+            deals = await orchestrator.run_scan_for_user(
                 chat_id=user.chat_id,
-                text=format_deal_telegram_message(deal),
-                parse_mode="Markdown",
-                disable_web_page_preview=True,
+                days_ahead=60,
+                max_results_per_mode=2,
+                force_notify=False,
             )
+            for deal in deals:
+                msg_text = format_deal_telegram_message(deal)
+                try:
+                    await context.bot.send_message(
+                        chat_id=user.chat_id,
+                        text=msg_text,
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except BadRequest:
+                    await context.bot.send_message(
+                        chat_id=user.chat_id,
+                        text=msg_text,
+                        disable_web_page_preview=True,
+                    )
+        except TelegramError as exc:
+            print(f"⚠️ Kullanıcı ({user.chat_id}) bildirim hatası: {exc}")
 
 
 def main() -> None:

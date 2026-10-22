@@ -1,4 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -117,11 +118,18 @@ class NomadTelegramBot:
             return
 
         for deal in deals:
-            await update.message.reply_text(
-                format_deal_telegram_message(deal),
-                parse_mode="Markdown",
-                disable_web_page_preview=True,
-            )
+            msg_text = format_deal_telegram_message(deal)
+            try:
+                await update.message.reply_text(
+                    msg_text,
+                    parse_mode="Markdown",
+                    disable_web_page_preview=True,
+                )
+            except BadRequest:
+                await update.message.reply_text(
+                    msg_text,
+                    disable_web_page_preview=True,
+                )
 
     async def cmd_hedef_ekle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.effective_chat or not update.message:
@@ -206,15 +214,23 @@ class NomadTelegramBot:
         chat_id = update.effective_chat.id
 
         if data == "scan_now":
+            await query.message.reply_text("🔎 **Fırsatlar taranıyor, lütfen bekleyin...**", parse_mode="Markdown")
             deals = await self.orchestrator.run_scan_for_user(
                 chat_id=chat_id, days_ahead=60, max_results_per_mode=2, force_notify=True
             )
             for deal in deals:
-                await query.message.reply_text(
-                    format_deal_telegram_message(deal),
-                    parse_mode="Markdown",
-                    disable_web_page_preview=True,
-                )
+                msg_text = format_deal_telegram_message(deal)
+                try:
+                    await query.message.reply_text(
+                        msg_text,
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+                except BadRequest:
+                    await query.message.reply_text(
+                        msg_text,
+                        disable_web_page_preview=True,
+                    )
         elif data == "show_holidays":
             windows = self.holiday_calc.get_upcoming_windows(days_ahead=120)
             await query.message.reply_text(

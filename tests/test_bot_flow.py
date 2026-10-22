@@ -49,3 +49,19 @@ async def test_end_to_end_orchestrator_scan_and_telegram_formatting():
         summary_text = format_holidays_summary(windows)
         assert "29 Ekim" in summary_text
         assert "izin" in summary_text.lower()
+
+
+def test_purge_demo_chat_ids_on_init():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_purge.db")
+        db = Database(db_path)
+        db.init_db()
+        # Simulate leftover demo user chat_id=1 and real user chat_id=5029566356
+        db.get_user_settings(1)
+        db.get_user_settings(5029566356)
+        db.init_db()
+        users = db.get_all_users()
+        chat_ids = [u.chat_id for u in users]
+        assert 1 not in chat_ids
+        assert 5029566356 in chat_ids
+

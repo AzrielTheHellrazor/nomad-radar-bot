@@ -39,6 +39,8 @@ class Database:
                 )
                 """
             )
+            # Demo veya geçersiz test chat_id kayıtlarını temizle
+            conn.execute("DELETE FROM user_settings WHERE chat_id <= 10")
             conn.commit()
 
     def get_user_settings(self, chat_id: int) -> UserSettings:
