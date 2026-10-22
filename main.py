@@ -72,11 +72,19 @@ async def periodic_scan_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             for deal in deals:
                 msg_text = format_deal_telegram_message(deal)
+                buttons = []
+                if deal.route.booking_hint_url.startswith("http"):
+                    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                    buttons.append(InlineKeyboardButton("✈️ Ulaşımı İncele", url=deal.route.booking_hint_url))
+                    if deal.stay.booking_url.startswith("http"):
+                        buttons.append(InlineKeyboardButton("🏨 Konaklamayı İncele", url=deal.stay.booking_url))
+                markup = InlineKeyboardMarkup([buttons]) if buttons else None
                 try:
                     await context.bot.send_message(
                         chat_id=user.chat_id,
                         text=msg_text,
                         parse_mode="HTML",
+                        reply_markup=markup,
                         disable_web_page_preview=True,
                     )
                 except BadRequest:
