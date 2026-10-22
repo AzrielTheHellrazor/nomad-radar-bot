@@ -1,3 +1,4 @@
+import os
 import httpx
 from datetime import timedelta
 from typing import Dict, List, Optional, Tuple
@@ -127,6 +128,8 @@ class BorderHopEngine:
         self, origin_iata: str, dest_iata: str, window: TravelWindow
     ) -> Optional[float]:
         """Ryanair açık JSON endpoint'inden gerçek anlık fiyat sorgulamayı dener."""
+        if os.getenv("LIVE_RYANAIR_HTTP", "0") != "1":
+            return None
         url = (
             "https://services-api.ryanair.com/farfnd/v4/oneWayFares"
             f"?departureAirportIataCode={origin_iata}&arrivalAirportIataCode={dest_iata}"

@@ -1,0 +1,11 @@
+services:
+  nomad-radar-bot:
+    build: .
+    container_name: nomad-radar-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/nomad_radar.db
