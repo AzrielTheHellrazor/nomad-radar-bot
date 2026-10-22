@@ -97,6 +97,49 @@ async def periodic_scan_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             print(f"⚠️ Kullanıcı ({user.chat_id}) bildirim hatası: {exc}")
 
 
+async def run_single_scan_and_send() -> None:
+    """
+    Sunucusuz (Serverless / GitHub Actions Cron) çalışma modu:
+    Tek seferlik tarama yapar, bulunan ekstra ucuz fırsatları Telegram'a gönderir ve kapanır.
+    Maliyet: 0$ (GitHub Actions üzerinde günde 1 kez ücretsiz çalışır).
+    """
+    from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+
+    chat_id = DEFAULT_ADMIN_CHAT_ID or 5029566356
+    db = Database(DATABASE_PATH)
+    db.init_db()
+    orchestrator = DealScanOrchestrator(db=db)
+
+    deals = await orchestrator.run_scan_for_user(
+        chat_id=chat_id,
+        days_ahead=60,
+        max_results_per_mode=3,
+        force_notify=False,
+    )
+    if not deals:
+        print("ℹ️ Bugün kriterlere uyan ekstra ucuz (%35+ indirimli) yeni fırsat bulunamadı.")
+        return
+
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    async with bot:
+        for deal in deals:
+            msg_text = format_deal_telegram_message(deal)
+            buttons = []
+            if deal.route.booking_hint_url.startswith("http"):
+                buttons.append(InlineKeyboardButton("✈️ Ulaşımı İncele", url=deal.route.booking_hint_url))
+            if deal.stay.booking_url.startswith("http"):
+                buttons.append(InlineKeyboardButton("🏨 Konaklamayı İncele", url=deal.stay.booking_url))
+            markup = InlineKeyboardMarkup([buttons]) if buttons else None
+            await bot.send_message(
+                chat_id=chat_id,
+                text=msg_text,
+                parse_mode="HTML",
+                reply_markup=markup,
+                disable_web_page_preview=True,
+            )
+    print(f"✅ {len(deals)} adet ekstra ucuz fırsat Telegram ({chat_id}) hesabına gönderildi!")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="NomadRadar Dual-Mode Smart Travel Telegram Bot")
     parser.add_argument(
@@ -104,7 +147,16 @@ def main() -> None:
         action="store_true",
         help="Telegram token gerekmeden terminalde canlı Solo ve Çift Modu fırsat taraması çalıştırır",
     )
+    parser.add_argument(
+        "--scan-once",
+        action="store_true",
+        help="Tek seferlik tarama yapıp Telegram'a gönderir ve kapanır (GitHub Actions / Cron için 0$ sunucusuz mod)",
+    )
     args = parser.parse_args()
+
+    if args.scan_once and TELEGRAM_BOT_TOKEN:
+        asyncio.run(run_single_scan_and_send())
+        return
 
     if args.demo or not TELEGRAM_BOT_TOKEN:
         if not TELEGRAM_BOT_TOKEN and not args.demo:
