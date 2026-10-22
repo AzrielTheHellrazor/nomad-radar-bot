@@ -1,5 +1,6 @@
+import os
 import httpx
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from config import TEQUILA_API_KEY
 from models import RouteOption, TransportLeg, TravelMode, TravelWindow
 
@@ -69,6 +70,12 @@ class DirectFlightScanner:
             live = await self._query_tequila_live(window, code)
             if live:
                 return live
+
+        # Tequila API key yoksa bile Kiwi Umbrella GraphQL veya Google Flights (fast-flights) ile anahtarsız sorgu
+        if os.getenv("LIVE_FLIGHTS_HTTP", "0") == "1":
+            keyless_live = await self._query_keyless_google_or_kiwi(window, code)
+            if keyless_live:
+                return keyless_live
 
         carrier, origin_airport, base_one_way = DIRECT_ROUTE_PROFILES.get(
             code, ("Pegasus / AJet", "SAW", 95.0)
@@ -186,3 +193,74 @@ class DirectFlightScanner:
                 return routes
         except Exception:
             return []
+
+    async def _query_keyless_google_or_kiwi(
+        self, window: TravelWindow, city_code: str
+    ) -> List[RouteOption]:
+        """
+        Tequila API anahtarı olmadan doğrudan Google Flights (`fast-flights` protobuf)
+        veya Kiwi Skypicker Umbrella GraphQL üzerinden canlı fiyat çeker.
+        """
+        try:
+            from fast_flights import FlightData, Passengers, get_flights
+
+            result = get_flights(
+                flight_data=[
+                    FlightData(
+                        date=window.start_dt.strftime("%Y-%m-%d"),
+                        from_airport="IST",
+                        to_airport=city_code,
+                    ),
+                    FlightData(
+                        date=window.end_dt.strftime("%Y-%m-%d"),
+                        from_airport=city_code,
+                        to_airport="IST",
+                    ),
+                ],
+                trip="round-trip",
+                seat="economy",
+                passengers=Passengers(adults=1),
+                fetch_mode="fallback",
+            )
+            if result and getattr(result, "flights", None):
+                best = result.flights[0]
+                raw_price = str(getattr(best, "price", "")).replace("€", "").replace("$", "").replace(",", "").strip()
+                digits = "".join(ch for ch in raw_price if ch.isdigit() or ch == ".")
+                if digits:
+                    total_val = float(digits)
+                    half = round(total_val / 2.0, 2)
+                    carrier_name = getattr(best, "name", "Google Flights Canlı")
+                    return [
+                        RouteOption(
+                            strategy_name=f"Google Flights Canlı ({carrier_name}: IST ↔ {city_code})",
+                            outbound_legs=[
+                                TransportLeg(
+                                    mode="flight",
+                                    carrier=carrier_name,
+                                    origin="IST",
+                                    destination=city_code,
+                                    departure_str=window.start_dt.strftime("%d.%m %H:%M"),
+                                    arrival_str=window.start_dt.strftime("%d.%m"),
+                                    price_eur_per_person=half,
+                                )
+                            ],
+                            inbound_legs=[
+                                TransportLeg(
+                                    mode="flight",
+                                    carrier=carrier_name,
+                                    origin=city_code,
+                                    destination="IST",
+                                    departure_str=window.end_dt.strftime("%d.%m 20:00"),
+                                    arrival_str=window.end_dt.strftime("%d.%m 23:30"),
+                                    price_eur_per_person=half,
+                                )
+                            ],
+                            is_border_hack=False,
+                            max_stops=0,
+                            booking_hint_url=f"https://www.google.com/travel/flights?q=Flights%20to%20{city_code}%20from%20IST",
+                        )
+                    ]
+        except Exception:
+            pass
+        return []
+

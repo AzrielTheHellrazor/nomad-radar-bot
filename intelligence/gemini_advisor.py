@@ -1,32 +1,64 @@
-from config import GEMINI_API_KEY, GEMINI_MODEL
+import httpx
+from config import GEMINI_API_KEY, GEMINI_MODEL, OPENROUTER_KEY, OPENROUTER_MODEL
 from models import DealPackage, TravelMode
 
 
 class GeminiAdvisor:
     """
-    Yakalanan seyahat paketini Gemini AI ile yorumlar;
+    Yakalanan seyahat paketini Gemini AI veya OpenRouter AI ile yorumlar;
     kullanıcıya kaç gün izinle kaç gün tatil yapacağını, neden bu rotanın ucuz olduğunu
     ve bedava/konforlu konaklama stratejisini açıklar.
-    GEMINI_API_KEY tanımlı değilse veya kota doluysa akıllı kural tabanlı Türkçe analiz üretir.
+    Sırasıyla:
+      1. GEMINI_API_KEY (Google AI Studio resmi SDK)
+      2. OPENROUTER_KEY (OpenRouter REST API yedek/alternatif motoru)
+      3. Akıllı Yerel Kural Tabanlı Türkçe Analiz (Offline / Sıfır Maliyet Yedeği)
     """
 
+    async def _call_openrouter(self, prompt: str) -> str | None:
+        if not OPENROUTER_KEY:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": OPENROUTER_MODEL,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
+                if resp.status_code == 200:
+                    choices = resp.json().get("choices", [])
+                    if choices:
+                        content = choices[0].get("message", {}).get("content", "")
+                        if content:
+                            return content.strip()
+        except Exception:
+            pass
+        return None
+
     async def generate_commentary(self, deal: DealPackage) -> str:
+        prompt = (
+            f"Sen uzman bir ucuz seyahat ve tatil optimizasyon asistanısın. "
+            f"Aşağıdaki fırsatı Türkçe olarak 3-4 cümlede çok vurucu ve samimi şekilde yorumla:\n"
+            f"- Mod: {'SOLO (1 Kişi Yeşil Pasaport)' if deal.mode == TravelMode.SOLO else 'ÇİFT MODU (2 Kişi: Yeşil + Bordo Pasaport, Konforlu & Vize Sorunsuz)'}\n"
+            f"- Hedef: {deal.country.name_tr} / {deal.city_name_tr}\n"
+            f"- Tatil Penceresi: {deal.window.title} ({deal.window.leave_days_required} gün izinle {deal.window.total_days} gün tatil)\n"
+            f"- Ulaşım: {deal.route.strategy_name} (Kişi başı Gidiş-Dönüş {deal.route.roundtrip_price_per_person_eur}€)\n"
+            f"- Konaklama: {deal.stay.title} ({deal.stay.nights_charged} gece toplam {deal.stay.total_stay_cost_eur}€)\n"
+            f"- Vize Durumu: {deal.visa_note}\n"
+            f"- Toplam Paket Maliyeti: {deal.grand_total_eur}€ (Piyasa ortalamasına göre %{deal.discount_vs_baseline_pct} daha ucuz)"
+        )
+
+        # 1. Öncelik: Google Gemini Resmi SDK
         if GEMINI_API_KEY:
             try:
                 from google import genai
 
                 client = genai.Client(api_key=GEMINI_API_KEY)
-                prompt = (
-                    f"Sen uzman bir ucuz seyahat ve tatil optimizasyon asistanısın. "
-                    f"Aşağıdaki fırsatı Türkçe olarak 3-4 cümlede çok vurucu ve samimi şekilde yorumla:\n"
-                    f"- Mod: {'SOLO (1 Kişi Yeşil Pasaport)' if deal.mode == TravelMode.SOLO else 'ÇİFT MODU (2 Kişi: Yeşil + Bordo Pasaport, Konforlu & Vize Sorunsuz)'}\n"
-                    f"- Hedef: {deal.country.name_tr} / {deal.city_name_tr}\n"
-                    f"- Tatil Penceresi: {deal.window.title} ({deal.window.leave_days_required} gün izinle {deal.window.total_days} gün tatil)\n"
-                    f"- Ulaşım: {deal.route.strategy_name} (Kişi başı Gidiş-Dönüş {deal.route.roundtrip_price_per_person_eur}€)\n"
-                    f"- Konaklama: {deal.stay.title} ({deal.stay.nights_charged} gece toplam {deal.stay.total_stay_cost_eur}€)\n"
-                    f"- Vize Durumu: {deal.visa_note}\n"
-                    f"- Toplam Paket Maliyeti: {deal.grand_total_eur}€ (Piyasa ortalamasına göre %{deal.discount_vs_baseline_pct} daha ucuz)"
-                )
                 response = client.models.generate_content(
                     model=GEMINI_MODEL,
                     contents=prompt,
@@ -37,7 +69,13 @@ class GeminiAdvisor:
             except Exception:
                 pass
 
-        # Akıllı Yerel Yorum Üretici (Offline / Zero-Cost Fallback)
+        # 2. Öncelik: OpenRouter API (OPENROUTER_KEY)
+        or_text = await self._call_openrouter(prompt)
+        if or_text:
+            deal.ai_commentary = or_text
+            return deal.ai_commentary
+
+        # 3. Öncelik: Akıllı Yerel Yorum Üretici (Offline / Zero-Cost Fallback)
         if deal.mode == TravelMode.SOLO:
             free_stays = [s for s in deal.alternative_stays if s.is_free_stay]
             free_total = round(deal.transport_total_eur + deal.visa_cost_total_eur, 2)
@@ -70,19 +108,20 @@ class GeminiAdvisor:
         return commentary
 
     async def answer_freeform_question(self, question: str) -> str:
+        sys_prompt = (
+            "Sen NomadRadar adında, Türkiye'den (İstanbul çıkışlı) seyahat eden "
+            "bir kullanıcıya (Yeşil pasaportlu Solo mod ve Yeşil+Bordo pasaportlu Çift modu olan) "
+            "köprü izinler, Sofya/Selanik üzerinden Ryanair/WizzAir sınır hack'leri, "
+            "bedava konaklama (TrustedHousesitters, Couchsurfing, gece treni) ve vizesiz çift rotaları "
+            "konusunda nokta atışı tavsiyeler veren bir uzmansın. Kısa, net ve eyleme dönük cevap ver.\n\n"
+            f"Kullanıcı Sorusu: {question}"
+        )
+
         if GEMINI_API_KEY:
             try:
                 from google import genai
 
                 client = genai.Client(api_key=GEMINI_API_KEY)
-                sys_prompt = (
-                    "Sen NomadRadar adında, Türkiye'den (İstanbul çıkışlı) seyahat eden "
-                    "bir kullanıcıya (Yeşil pasaportlu Solo mod ve Yeşil+Bordo pasaportlu Çift modu olan) "
-                    "köprü izinler, Sofya/Selanik üzerinden Ryanair/WizzAir sınır hack'leri, "
-                    "bedava konaklama (TrustedHousesitters, Couchsurfing, gece treni) ve vizesiz çift rotaları "
-                    "konusunda nokta atışı tavsiyeler veren bir uzmansın. Kısa, net ve eyleme dönük cevap ver.\n\n"
-                    f"Kullanıcı Sorusu: {question}"
-                )
                 response = client.models.generate_content(
                     model=GEMINI_MODEL,
                     contents=sys_prompt,
@@ -91,6 +130,10 @@ class GeminiAdvisor:
                     return response.text.strip()
             except Exception:
                 pass
+
+        or_text = await self._call_openrouter(sys_prompt)
+        if or_text:
+            return or_text
 
         return (
             f"🤖 **NomadRadar AI Tavsiyesi (`{question}`):**\n"
