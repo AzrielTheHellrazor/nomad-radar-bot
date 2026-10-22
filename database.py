@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from models import TravelMode, UserSettings
 
@@ -173,6 +173,6 @@ class Database:
                     last_price_eur = excluded.last_price_eur,
                     notified_at = excluded.notified_at
                 """,
-                (deal_key, total_price_eur, datetime.utcnow().isoformat()),
+                (deal_key, total_price_eur, datetime.now(timezone.utc).isoformat()),
             )
             conn.commit()
