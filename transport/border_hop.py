@@ -32,6 +32,9 @@ BALKAN_LOWCOST_HUBS: Dict[str, Tuple[str, str, float]] = {
 }
 
 
+_RYANAIR_FARE_CACHE: Dict[str, Optional[float]] = {}
+
+
 class BorderHopEngine:
     """
     SOLO MOD ÖZEL HACK MOTORU:
@@ -128,13 +131,19 @@ class BorderHopEngine:
         self, origin_iata: str, dest_iata: str, window: TravelWindow
     ) -> Optional[float]:
         """Ryanair açık JSON endpoint'inden gerçek anlık fiyat sorgulamayı dener."""
-        if os.getenv("LIVE_RYANAIR_HTTP", "0") != "1":
+        if os.getenv("LIVE_RYANAIR_HTTP", "1") != "1":
             return None
+        d_from = (window.start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        d_to = (window.start_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+        cache_key = f"{origin_iata}:{dest_iata}:{d_from}:{d_to}"
+        if cache_key in _RYANAIR_FARE_CACHE:
+            return _RYANAIR_FARE_CACHE[cache_key]
+
         url = (
             "https://services-api.ryanair.com/farfnd/v4/oneWayFares"
             f"?departureAirportIataCode={origin_iata}&arrivalAirportIataCode={dest_iata}"
-            f"&outboundDepartureDateFrom={window.start_dt.strftime('%Y-%m-%d')}"
-            f"&outboundDepartureDateTo={window.start_dt.strftime('%Y-%m-%d')}&currency=EUR"
+            f"&outboundDepartureDateFrom={d_from}"
+            f"&outboundDepartureDateTo={d_to}&currency=EUR"
         )
         try:
             async with httpx.AsyncClient(timeout=3.5) as client:
@@ -144,7 +153,10 @@ class BorderHopEngine:
                     if fares:
                         val = fares[0].get("outbound", {}).get("price", {}).get("value")
                         if val:
-                            return float(val)
+                            price_val = float(val)
+                            _RYANAIR_FARE_CACHE[cache_key] = price_val
+                            return price_val
         except Exception:
             pass
+        _RYANAIR_FARE_CACHE[cache_key] = None
         return None
