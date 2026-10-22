@@ -3,6 +3,7 @@ from typing import List
 from accommodation.aggregator import AccommodationAggregator
 from calendar_visa.holidays_tr import HolidayWindowCalculator
 from calendar_visa.visa_matrix import VisaEngine
+from config import MIN_DISCOUNT_PCT
 from intelligence.campaign_radar import CampaignRadar
 from models import DealPackage, TravelMode, TravelWindow
 from transport.aggregator import TransportAggregator
@@ -107,13 +108,15 @@ class DealScorer:
                 )
                 pkg.discount_vs_baseline_pct = discount_pct
 
-                if pkg.grand_total_eur <= max_budget_eur:
+                # Sadece diğer zamanlardan EKSTRA UCUZ (%35+ indirimli) ve bütçe dahilindeki fırsatları kabul et!
+                if pkg.grand_total_eur <= max_budget_eur and discount_pct >= MIN_DISCOUNT_PCT:
                     packages.append(pkg)
 
-        # Önce köprü tatilleri ve en yüksek indirim oranını öne çıkararak sırala
+        # Önce köprü tatilleri ve normal zamana göre EN YÜKSEK İNDİRİM ORANINI öne çıkararak sırala
         packages.sort(
             key=lambda p: (
                 not p.window.is_bridge_holiday,
+                -p.discount_vs_baseline_pct,
                 p.per_person_total_eur,
             )
         )

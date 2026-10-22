@@ -34,11 +34,14 @@ async def test_end_to_end_orchestrator_scan_and_telegram_formatting():
         assert TravelMode.COUPLE in modes_found
 
         for deal in found_deals:
+            # Sadece normal zamandan ekstra ucuz (%35+ indirimli) fırsatlar gelmeli
+            assert deal.discount_vs_baseline_pct >= 35
             msg = format_deal_telegram_message(deal)
-            # Telegram HTML formatında olmalı, ham ** veya [link](url) içermemeli!
+            # Telegram HTML formatında olmalı, AI modu kapalıyken blockquote olmamalı!
             assert "<b>" in msg
             assert "</b>" in msg
-            assert "<blockquote>" in msg
+            assert "<blockquote>" not in msg
+            assert "Normal Dönem Ortalaması:" in msg
             assert "**" not in msg
             assert "](" not in msg
             if deal.mode == TravelMode.SOLO:

@@ -1,5 +1,6 @@
 from datetime import date
 from typing import List, Optional
+from config import ENABLE_AI
 from database import Database
 from intelligence.deal_scorer import DealScorer
 from intelligence.gemini_advisor import GeminiAdvisor
@@ -73,13 +74,15 @@ class DealScanOrchestrator:
             mode_candidates.sort(
                 key=lambda d: (
                     not d.window.is_bridge_holiday,
+                    -d.discount_vs_baseline_pct,
                     d.per_person_total_eur,
                 )
             )
 
             selected = mode_candidates[:max_results_per_mode]
             for deal in selected:
-                await self.advisor.generate_commentary(deal)
+                if ENABLE_AI:
+                    await self.advisor.generate_commentary(deal)
                 self.db.record_notified_deal(deal.deal_key, deal.grand_total_eur)
                 final_deals.append(deal)
 

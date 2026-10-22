@@ -65,15 +65,24 @@ def format_deal_telegram_message(deal: DealPackage) -> str:
                 f"  👉 <i>Bedava konaklama seçerseniz tüm seyahat toplamı sadece <b>{free_only_cost:.0f}€</b>!</i>"
             )
 
+    baseline_total = deal.country.typical_package_Baseline_eur * deal.passengers
+    saved_eur = max(0.0, baseline_total - deal.grand_total_eur)
+
     price_summary = (
-        f"💰 <b>TOPLAM PAKET (1 Kişi Her Şey Dahil): {deal.grand_total_eur:.0f}€</b>\n"
-        f"📉 <i>Piyasa ortalamasından %{deal.discount_vs_baseline_pct} daha ucuz!</i>"
+        f"📊 <b>Normal Dönem Ortalaması:</b> <s>{baseline_total:.0f}€</s> ➡️ <b>Şu An: {deal.grand_total_eur:.0f}€</b>\n"
+        f"🔥 <b>Normal Zamandan %{deal.discount_vs_baseline_pct} DAHA UCUZ! ({saved_eur:.0f}€ Net İndirim)</b>\n"
+        f"💰 <b>TOPLAM PAKET (1 Kişi Her Şey Dahil): {deal.grand_total_eur:.0f}€</b>"
         if deal.mode == TravelMode.SOLO
-        else f"💰 <b>2 KİŞİ TOPLAM PAKET (2 Kişi: Uçak x2 + Özel Oda + Vize): {deal.grand_total_eur:.0f}€</b>\n"
-        f"📉 <i>Kişi Başı: <b>{deal.per_person_total_eur:.0f}€</b> — Normal fiyattan %{deal.discount_vs_baseline_pct} indirimli!</i>"
+        else f"📊 <b>Normal Dönem Ortalaması:</b> <s>{baseline_total:.0f}€</s> (2 Kişi) ➡️ <b>Şu An: {deal.grand_total_eur:.0f}€</b>\n"
+        f"🔥 <b>Normal Zamandan %{deal.discount_vs_baseline_pct} DAHA UCUZ! ({saved_eur:.0f}€ Net İndirim)</b>\n"
+        f"💰 <b>2 KİŞİ TOPLAM PAKET (2 Kişi: Uçak x2 + Özel Oda + Vize): {deal.grand_total_eur:.0f}€</b> <i>(Kişi Başı: <b>{deal.per_person_total_eur:.0f}€</b>)</i>"
     )
 
-    ai_html = clean_to_telegram_html(deal.ai_commentary)
+    ai_block = ""
+    if deal.ai_commentary:
+        ai_html = clean_to_telegram_html(deal.ai_commentary)
+        ai_block = f"\n<blockquote>{ai_html}</blockquote>\n"
+
     route_url = html.escape(deal.route.booking_hint_url, quote=True)
     stay_url = html.escape(deal.stay.booking_url, quote=True)
 
@@ -92,9 +101,9 @@ def format_deal_telegram_message(deal: DealPackage) -> str:
         f"{stay_block}"
         f"{free_stays_block}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{price_summary}\n\n"
-        f"<blockquote>{ai_html}</blockquote>\n"
-        f"🔗 <a href=\"{route_url}\">✈️ Ulaşım / Bilet Linki</a>   |   <a href=\"{stay_url}\">🏨 Konaklama Linki</a>"
+        f"{price_summary}\n"
+        f"{ai_block}"
+        f"\n🔗 <a href=\"{route_url}\">✈️ Ulaşım / Bilet Linki</a>   |   <a href=\"{stay_url}\">🏨 Konaklama Linki</a>"
     )
 
 

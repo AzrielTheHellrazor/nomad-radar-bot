@@ -9,6 +9,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
+ENABLE_AI = os.getenv("ENABLE_AI", "0") == "1"
+MIN_DISCOUNT_PCT = int(os.getenv("MIN_DISCOUNT_PCT", "35"))
 
 # Optional External Flight APIs (Kiwi Tequila, Amadeus, SerpApi)
 TEQUILA_API_KEY = os.getenv("TEQUILA_API_KEY", "")
