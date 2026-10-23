@@ -105,7 +105,10 @@ async def run_single_scan_and_send() -> None:
     """
     from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
-    chat_id = DEFAULT_ADMIN_CHAT_ID or 5029566356
+    chat_id = DEFAULT_ADMIN_CHAT_ID
+    if not chat_id:
+        print("⚠️ TELEGRAM_CHAT_ID tanımlı değil.")
+        return
     db = Database(DATABASE_PATH)
     db.init_db()
     orchestrator = DealScanOrchestrator(db=db)

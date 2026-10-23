@@ -67,12 +67,12 @@ def test_purge_demo_chat_ids_on_init():
         db_path = os.path.join(tmpdir, "test_purge.db")
         db = Database(db_path)
         db.init_db()
-        # Simulate leftover demo user chat_id=1 and real user chat_id=5029566356
+        # Simulate leftover demo user chat_id=1 and real user chat_id=100001
         db.get_user_settings(1)
-        db.get_user_settings(5029566356)
+        db.get_user_settings(100001)
         db.init_db()
         users = db.get_all_users()
         chat_ids = [u.chat_id for u in users]
         assert 1 not in chat_ids
-        assert 5029566356 in chat_ids
+        assert 100001 in chat_ids
 
