@@ -12,33 +12,51 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
 ENABLE_AI = os.getenv("ENABLE_AI", "0") == "1"
 MIN_DISCOUNT_PCT = int(os.getenv("MIN_DISCOUNT_PCT", "35"))
 EUR_TO_TRY_FALLBACK = float(os.getenv("EUR_TO_TRY", "55.76"))
-_CACHED_EUR_TO_TRY: float | None = None
+USD_TO_TRY_FALLBACK = float(os.getenv("USD_TO_TRY", "49.68"))
+EUR_TO_USD_FALLBACK = float(os.getenv("EUR_TO_USD", "1.12"))
+_CACHED_FX: dict | None = None
 
 
-def get_eur_to_try_rate() -> float:
+def get_fx_rates() -> dict:
     """
-    Canlı EUR -> TRY döviz kurunu ücretsiz açık API'den (open.er-api.com) çeker
-    ve çalışma süresince önbellekte tutar. Çevrimdışıysa güncel 55.76 TL baz kurunu kullanır.
+    Canlı EUR -> TRY, USD -> TRY ve EUR -> USD döviz kurlarını ücretsiz açık API'den
+    (open.er-api.com) çeker ve önbellekte tutar.
     """
-    global _CACHED_EUR_TO_TRY
-    if _CACHED_EUR_TO_TRY is not None:
-        return _CACHED_EUR_TO_TRY
-    if os.getenv("EUR_TO_TRY"):
-        _CACHED_EUR_TO_TRY = float(os.getenv("EUR_TO_TRY", "55.76"))
-        return _CACHED_EUR_TO_TRY
+    global _CACHED_FX
+    if _CACHED_FX is not None:
+        return _CACHED_FX
     try:
         import httpx
 
         resp = httpx.get("https://open.er-api.com/v6/latest/EUR", timeout=3.5)
         if resp.status_code == 200:
-            try_rate = resp.json().get("rates", {}).get("TRY")
-            if try_rate and float(try_rate) > 40.0:
-                _CACHED_EUR_TO_TRY = round(float(try_rate), 2)
-                return _CACHED_EUR_TO_TRY
+            rates = resp.json().get("rates", {})
+            eur_try = float(rates.get("TRY", EUR_TO_TRY_FALLBACK))
+            eur_usd = float(rates.get("USD", EUR_TO_USD_FALLBACK))
+            usd_try = round(eur_try / max(0.01, eur_usd), 2)
+            if eur_try > 40.0:
+                _CACHED_FX = {
+                    "EUR_TRY": round(eur_try, 2),
+                    "USD_TRY": usd_try,
+                    "EUR_USD": round(eur_usd, 2),
+                }
+                return _CACHED_FX
     except Exception:
         pass
-    _CACHED_EUR_TO_TRY = EUR_TO_TRY_FALLBACK
-    return _CACHED_EUR_TO_TRY
+    _CACHED_FX = {
+        "EUR_TRY": EUR_TO_TRY_FALLBACK,
+        "USD_TRY": USD_TO_TRY_FALLBACK,
+        "EUR_USD": EUR_TO_USD_FALLBACK,
+    }
+    return _CACHED_FX
+
+
+def get_eur_to_try_rate() -> float:
+    return get_fx_rates()["EUR_TRY"]
+
+
+def get_usd_to_try_rate() -> float:
+    return get_fx_rates()["USD_TRY"]
 
 # Optional External Flight APIs (Kiwi Tequila, Amadeus, SerpApi)
 TEQUILA_API_KEY = os.getenv("TEQUILA_API_KEY", "")

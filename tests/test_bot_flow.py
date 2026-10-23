@@ -78,9 +78,12 @@ def test_purge_demo_chat_ids_on_init():
 
 
 def test_live_eur_to_try_rate_is_realistic():
-    from config import get_eur_to_try_rate
+    from config import get_eur_to_try_rate, get_usd_to_try_rate
 
-    rate = get_eur_to_try_rate()
-    assert 48.0 <= rate <= 75.0
+    eur_rate = get_eur_to_try_rate()
+    usd_rate = get_usd_to_try_rate()
+    assert 48.0 <= eur_rate <= 75.0
+    assert 42.0 <= usd_rate <= 68.0
+
 
 

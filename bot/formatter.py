@@ -1,7 +1,7 @@
 import html
 import re
 from typing import List
-from config import get_eur_to_try_rate
+from config import get_fx_rates
 from models import DealPackage, TravelMode, TravelWindow, UserSettings
 
 
@@ -66,20 +66,26 @@ def format_deal_telegram_message(deal: DealPackage) -> str:
                 f"  👉 <i>Bedava konaklama seçerseniz tüm seyahat toplamı sadece <b>{free_only_cost:.0f}€</b>!</i>"
             )
 
-    eur_to_try = get_eur_to_try_rate()
+    fx = get_fx_rates()
+    eur_to_try = fx["EUR_TRY"]
+    usd_to_try = fx["USD_TRY"]
+    eur_to_usd = fx["EUR_USD"]
     baseline_total = deal.country.typical_package_Baseline_eur * deal.passengers
     saved_eur = max(0.0, baseline_total - deal.grand_total_eur)
     transport_tl = deal.transport_total_eur * eur_to_try
     grand_tl = deal.grand_total_eur * eur_to_try
+    grand_usd = deal.grand_total_eur * eur_to_usd
 
     price_summary = (
-        f"📊 <b>Normal Dönem Ortalaması:</b> <s>{baseline_total:.0f}€</s> ➡️ <b>Şu An: {deal.grand_total_eur:.0f}€ (~{grand_tl:,.0f} TL)</b>\n"
+        f"📊 <b>Normal Dönem Ortalaması:</b> <s>{baseline_total:.0f}€</s> ➡️ <b>Şu An: {deal.grand_total_eur:.0f}€ (~{grand_usd:.0f}$ / ~{grand_tl:,.0f} TL)</b>\n"
         f"🔥 <b>Normal Zamandan %{deal.discount_vs_baseline_pct} DAHA UCUZ! ({saved_eur:.0f}€ Net İndirim)</b>\n"
-        f"💰 <b>TOPLAM PAKET (1 Kişi Her Şey Dahil): {deal.grand_total_eur:.0f}€ (~{grand_tl:,.0f} TL)</b> <i>(1€ = {eur_to_try:.2f} TL)</i>"
+        f"💰 <b>TOPLAM PAKET (1 Kişi Her Şey Dahil): {deal.grand_total_eur:.0f}€ (~{grand_usd:.0f}$ / ~{grand_tl:,.0f} TL)</b>\n"
+        f"💱 <i>Canlı Kur: 1€ = {eur_to_try:.2f} TL  |  1$ = {usd_to_try:.2f} TL</i>"
         if deal.mode == TravelMode.SOLO
-        else f"📊 <b>Normal Dönem Ortalaması:</b> <s>{baseline_total:.0f}€</s> (2 Kişi) ➡️ <b>Şu An: {deal.grand_total_eur:.0f}€ (~{grand_tl:,.0f} TL)</b>\n"
+        else f"📊 <b>Normal Dönem Ortalaması:</b> <s>{baseline_total:.0f}€</s> (2 Kişi) ➡️ <b>Şu An: {deal.grand_total_eur:.0f}€ (~{grand_usd:.0f}$ / ~{grand_tl:,.0f} TL)</b>\n"
         f"🔥 <b>Normal Zamandan %{deal.discount_vs_baseline_pct} DAHA UCUZ! ({saved_eur:.0f}€ Net İndirim)</b>\n"
-        f"💰 <b>2 KİŞİ TOPLAM PAKET (2 Kişi: Uçak x2 + Özel Oda + Vize): {deal.grand_total_eur:.0f}€ (~{grand_tl:,.0f} TL)</b> <i>(Kişi Başı: <b>{deal.per_person_total_eur:.0f}€</b> • 1€ = {eur_to_try:.2f} TL)</i>"
+        f"💰 <b>2 KİŞİ TOPLAM PAKET (2 Kişi: Uçak x2 + Özel Oda + Vize): {deal.grand_total_eur:.0f}€ (~{grand_usd:.0f}$ / ~{grand_tl:,.0f} TL)</b>\n"
+        f"👤 <i>Kişi Başı: <b>{deal.per_person_total_eur:.0f}€</b>  |  💱 Canlı Kur: 1€ = {eur_to_try:.2f} TL • 1$ = {usd_to_try:.2f} TL</i>"
     )
 
     ai_block = ""
