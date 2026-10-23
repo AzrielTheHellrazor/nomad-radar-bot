@@ -2,8 +2,9 @@ name: NomadRadar Günlük Ucuz Seyahat Taraması (0$ Serverless)
 
 on:
   schedule:
-    # Her gün Türkiye saatiyle 10:00'da (UTC 07:00) otomatik çalışır
-    - cron: '0 7 * * *'
+    # GitHub Actions tepe saat (:00) yoğunluğuna takılmamak için küsuratlı dakikalarda (TR saatiyle 09:23 ve 20:23) çalışır
+    - cron: '23 6 * * *'
+    - cron: '23 17 * * *'
   workflow_dispatch: # GitHub üzerinden tek tıkla manuel de tetiklenebilir
 
 jobs:
