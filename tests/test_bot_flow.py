@@ -76,3 +76,11 @@ def test_purge_demo_chat_ids_on_init():
         assert 1 not in chat_ids
         assert 100001 in chat_ids
 
+
+def test_live_eur_to_try_rate_is_realistic():
+    from config import get_eur_to_try_rate
+
+    rate = get_eur_to_try_rate()
+    assert 48.0 <= rate <= 75.0
+
+

@@ -11,7 +11,34 @@ OPENROUTER_KEY = os.getenv("OPENROUTER_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
 ENABLE_AI = os.getenv("ENABLE_AI", "0") == "1"
 MIN_DISCOUNT_PCT = int(os.getenv("MIN_DISCOUNT_PCT", "35"))
-EUR_TO_TRY = float(os.getenv("EUR_TO_TRY", "38.0"))
+EUR_TO_TRY_FALLBACK = float(os.getenv("EUR_TO_TRY", "55.76"))
+_CACHED_EUR_TO_TRY: float | None = None
+
+
+def get_eur_to_try_rate() -> float:
+    """
+    Canlı EUR -> TRY döviz kurunu ücretsiz açık API'den (open.er-api.com) çeker
+    ve çalışma süresince önbellekte tutar. Çevrimdışıysa güncel 55.76 TL baz kurunu kullanır.
+    """
+    global _CACHED_EUR_TO_TRY
+    if _CACHED_EUR_TO_TRY is not None:
+        return _CACHED_EUR_TO_TRY
+    if os.getenv("EUR_TO_TRY"):
+        _CACHED_EUR_TO_TRY = float(os.getenv("EUR_TO_TRY", "55.76"))
+        return _CACHED_EUR_TO_TRY
+    try:
+        import httpx
+
+        resp = httpx.get("https://open.er-api.com/v6/latest/EUR", timeout=3.5)
+        if resp.status_code == 200:
+            try_rate = resp.json().get("rates", {}).get("TRY")
+            if try_rate and float(try_rate) > 40.0:
+                _CACHED_EUR_TO_TRY = round(float(try_rate), 2)
+                return _CACHED_EUR_TO_TRY
+    except Exception:
+        pass
+    _CACHED_EUR_TO_TRY = EUR_TO_TRY_FALLBACK
+    return _CACHED_EUR_TO_TRY
 
 # Optional External Flight APIs (Kiwi Tequila, Amadeus, SerpApi)
 TEQUILA_API_KEY = os.getenv("TEQUILA_API_KEY", "")
