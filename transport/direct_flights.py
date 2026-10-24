@@ -52,7 +52,49 @@ DIRECT_ROUTE_PROFILES: Dict[str, Tuple[str, str, float]] = {
     "ICN": ("Asiana / THY", "IST", 415.0),
     "LHR": ("WizzAir / Pegasus / British Airways", "IST", 78.0),
     "DUB": ("Pegasus / Turkish Airlines", "SAW", 115.0),
+    "BGY": ("Pegasus / AJet", "SAW", 78.0),
+    "AGP": ("Pegasus / THY", "SAW", 105.0),
+    "ORY": ("Pegasus / Transavia", "SAW", 102.0),
+    "DUS": ("Pegasus / SunExpress", "SAW", 84.0),
+    "STR": ("Pegasus / SunExpress", "SAW", 82.0),
+    "STN": ("Pegasus / AJet", "SAW", 75.0),
+    "LGW": ("WizzAir / EasyJet / British Airways", "IST", 85.0),
+    "MAN": ("Pegasus / EasyJet", "SAW", 88.0),
+    "EDI": ("EasyJet / Turkish Airlines", "IST", 98.0),
+    "SOF": ("Pegasus / THY", "SAW", 55.0),
+    "VAR": ("THY", "IST", 68.0),
+    "BOJ": ("THY", "IST", 72.0),
+    "OTP": ("Pegasus / Tarom", "SAW", 58.0),
+    "CLJ": ("WizzAir / Tarom", "IST", 76.0),
+    "ZAG": ("Pegasus / Croatia Airlines", "SAW", 72.0),
+    "DBV": ("THY / Freebird", "IST", 88.0),
+    "SPU": ("THY / Croatia Airlines", "IST", 85.0),
+    "ZRH": ("Pegasus / AJet / Swiss", "SAW", 89.0),
+    "GVA": ("Pegasus / EasyJet", "SAW", 92.0),
+    "BSL": ("Pegasus / AJet", "SAW", 84.0),
+    "BRU": ("THY / Brussels Airlines", "IST", 96.0),
+    "CRL": ("Pegasus", "SAW", 79.0),
+    "CPH": ("Pegasus / SAS", "SAW", 86.0),
+    "BLL": ("Pegasus", "SAW", 82.0),
+    "ARN": ("Pegasus / AJet / SAS", "SAW", 88.0),
+    "GOT": ("Pegasus / SAS", "SAW", 85.0),
+    "PUS": ("Korean Air / Asiana (Seul Aktarmalı)", "IST", 430.0),
 }
+
+
+def get_typical_rt_flight_eur(city_code: str) -> float:
+    """
+    Returns the typical roundtrip flight price baseline in EUR for a given destination city.
+    Calculated as base_one_way * 2.0 from DIRECT_ROUTE_PROFILES.
+    Defaults to 180.0 EUR if the city is not profiled or city_code is empty.
+    """
+    if not city_code:
+        return 180.0
+    code = city_code.strip().upper()
+    profile = DIRECT_ROUTE_PROFILES.get(code)
+    if profile:
+        return round(float(profile[2]) * 2.0, 2)
+    return 180.0
 
 
 _LIVE_FLIGHT_CACHE: Dict[str, List[RouteOption]] = {}
@@ -66,8 +108,16 @@ class DirectFlightScanner:
     Sadece birim testlerinde (`LIVE_FLIGHTS_HTTP=0`) çevrimdışı test verisi kullanır.
     """
 
+    def get_typical_rt_flight_eur(self, city_code: str) -> float:
+        """Helper delegation to get_typical_rt_flight_eur."""
+        return get_typical_rt_flight_eur(city_code)
+
     async def search_direct_or_one_stop(
-        self, window: TravelWindow, city_code: str, mode: TravelMode
+        self,
+        window: TravelWindow,
+        city_code: str,
+        mode: TravelMode = TravelMode.SOLO,
+        origin_preference: str = "CHEAPEST",
     ) -> List[RouteOption]:
         code = city_code.upper()
         if TEQUILA_API_KEY:
@@ -77,11 +127,15 @@ class DirectFlightScanner:
 
         # Varsayılan olarak (%100 Canlı Mod): Google Flights (fast-flights) üzerinden gerçek fiyatları çek!
         if os.getenv("LIVE_FLIGHTS_HTTP", "1") == "1":
-            return await self._query_keyless_google_or_kiwi(window, code)
+            return await self._query_keyless_google_or_kiwi(
+                window, code, origin_preference=origin_preference
+            )
 
         carrier, origin_airport, base_one_way = DIRECT_ROUTE_PROFILES.get(
             code, ("Pegasus / AJet", "SAW", 95.0)
         )
+        if origin_preference.upper() in ("SAW", "IST"):
+            origin_airport = origin_preference.upper()
 
         # Resmi tatillerde Türkiye çıkışlı direkt biletler (özellikle Batı Avrupa'ya) şişer,
         # ama hafta içi flash indirimlerde veya Balkan/Kafkas rotalarında kampanya yakalanır.
@@ -197,118 +251,145 @@ class DirectFlightScanner:
             return []
 
     async def _query_keyless_google_or_kiwi(
-        self, window: TravelWindow, city_code: str
+        self, window: TravelWindow, city_code: str, origin_preference: str = "CHEAPEST"
     ) -> List[RouteOption]:
         """
         Tequila veya Skyscanner API anahtarına gerek duymadan doğrudan
         Google Flights (`fast-flights` v3.1+ protobuf motoru) üzerinden
         canlı uçuş saatlerini, havayolunu ve gerçek EUR fiyatını çeker.
+        SAW ve IST havalimanlarını eşzamanlı sorgular ve en ucuz rotayı seçer.
         """
         try:
             import asyncio
             import fast_flights
 
-            origin_airport = DIRECT_ROUTE_PROFILES.get(city_code, ("", "SAW", 95.0))[1]
             d_out_str = window.start_dt.strftime("%Y-%m-%d")
             d_in_str = window.end_dt.strftime("%Y-%m-%d")
-            cache_key = f"{origin_airport}:{city_code}:{d_out_str}:{d_in_str}"
-            if cache_key in _LIVE_FLIGHT_CACHE:
-                return _LIVE_FLIGHT_CACHE[cache_key]
-
             earliest_hr = 13 if window.start_dt.hour == 13 else None
 
             def _fetch_sync(orig: str):
-                q_out = fast_flights.create_query(
-                    flights=[
-                        fast_flights.FlightQuery(
-                            date=d_out_str,
-                            from_airport=orig,
-                            to_airport=city_code,
-                            max_stops=1,
-                            earliest_departure_hour=earliest_hr,
-                        )
-                    ],
-                    trip="one-way",
-                    seat="economy",
-                    passengers=fast_flights.Passengers(adults=1),
-                    currency="EUR",
-                )
-                q_in = fast_flights.create_query(
-                    flights=[
-                        fast_flights.FlightQuery(
-                            date=d_in_str,
-                            from_airport=city_code,
-                            to_airport=orig,
-                            max_stops=1,
-                        )
-                    ],
-                    trip="one-way",
-                    seat="economy",
-                    passengers=fast_flights.Passengers(adults=1),
-                    currency="EUR",
-                )
-                return fast_flights.get_flights(q_out), fast_flights.get_flights(q_in)
-
-            res_out, res_in = await asyncio.to_thread(_fetch_sync, origin_airport)
-            if (not res_out or not res_in) and origin_airport == "SAW":
-                origin_airport = "IST"
-                res_out, res_in = await asyncio.to_thread(_fetch_sync, "IST")
-
-            valid_out = [x for x in (res_out or []) if getattr(x, "price", 0) and getattr(x, "flights", None)]
-            valid_in = [x for x in (res_in or []) if getattr(x, "price", 0) and getattr(x, "flights", None)]
-
-            if valid_out and valid_in:
-                best_out = sorted(valid_out, key=lambda x: x.price)[0]
-                best_in = sorted(valid_in, key=lambda x: x.price)[0]
-
-                f_out = best_out.flights[0]
-                f_in = best_in.flights[0]
-                out_dep = f"{f_out.departure.date[2]:02d}.{f_out.departure.date[1]:02d} {f_out.departure.time[0]:02d}:{f_out.departure.time[1]:02d}"
-                out_arr = f"{f_out.arrival.date[2]:02d}.{f_out.arrival.date[1]:02d} {f_out.arrival.time[0]:02d}:{f_out.arrival.time[1]:02d}"
-                in_dep = f"{f_in.departure.date[2]:02d}.{f_in.departure.date[1]:02d} {f_in.departure.time[0]:02d}:{f_in.departure.time[1]:02d}"
-                in_arr = f"{f_in.arrival.date[2]:02d}.{f_in.arrival.date[1]:02d} {f_in.arrival.time[0]:02d}:{f_in.arrival.time[1]:02d}"
-
-                carrier_out = " / ".join(best_out.airlines) if best_out.airlines else "Google Flights"
-                carrier_in = " / ".join(best_in.airlines) if best_in.airlines else "Google Flights"
-                stops = max(len(best_out.flights) - 1, len(best_in.flights) - 1)
-
-                routes = [
-                    RouteOption(
-                        strategy_name=f"Google Flights Canlı ({carrier_out}: {origin_airport} ↔ {city_code})",
-                        outbound_legs=[
-                            TransportLeg(
-                                mode="flight",
-                                carrier=carrier_out,
-                                origin=origin_airport,
-                                destination=city_code,
-                                departure_str=out_dep,
-                                arrival_str=out_arr,
-                                price_eur_per_person=float(best_out.price),
+                try:
+                    q_out = fast_flights.create_query(
+                        flights=[
+                            fast_flights.FlightQuery(
+                                date=d_out_str,
+                                from_airport=orig,
+                                to_airport=city_code,
+                                max_stops=1,
+                                earliest_departure_hour=earliest_hr,
                             )
                         ],
-                        inbound_legs=[
-                            TransportLeg(
-                                mode="flight",
-                                carrier=carrier_in,
-                                origin=city_code,
-                                destination=origin_airport,
-                                departure_str=in_dep,
-                                arrival_str=in_arr,
-                                price_eur_per_person=float(best_in.price),
-                            )
-                        ],
-                        is_border_hack=False,
-                        max_stops=stops,
-                        booking_hint_url=(
-                            f"https://www.google.com/travel/flights?q=Flights%20to%20{city_code}%20from%20{origin_airport}%20on%20"
-                            f"{d_out_str}%20through%20{d_in_str}"
-                        ),
+                        trip="one-way",
+                        seat="economy",
+                        passengers=fast_flights.Passengers(adults=1),
+                        currency="EUR",
                     )
-                ]
-                _LIVE_FLIGHT_CACHE[cache_key] = routes
-                return routes
+                    q_in = fast_flights.create_query(
+                        flights=[
+                            fast_flights.FlightQuery(
+                                date=d_in_str,
+                                from_airport=city_code,
+                                to_airport=orig,
+                                max_stops=1,
+                            )
+                        ],
+                        trip="one-way",
+                        seat="economy",
+                        passengers=fast_flights.Passengers(adults=1),
+                        currency="EUR",
+                    )
+                    return fast_flights.get_flights(q_out), fast_flights.get_flights(q_in)
+                except Exception:
+                    return None, None
+
+            def _parse_routes(orig: str, res_out, res_in) -> List[RouteOption]:
+                valid_out = [x for x in (res_out or []) if getattr(x, "price", 0) and getattr(x, "flights", None)]
+                valid_in = [x for x in (res_in or []) if getattr(x, "price", 0) and getattr(x, "flights", None)]
+
+                if valid_out and valid_in:
+                    best_out = sorted(valid_out, key=lambda x: x.price)[0]
+                    best_in = sorted(valid_in, key=lambda x: x.price)[0]
+
+                    f_out = best_out.flights[0]
+                    f_in = best_in.flights[0]
+                    out_dep = f"{f_out.departure.date[2]:02d}.{f_out.departure.date[1]:02d} {f_out.departure.time[0]:02d}:{f_out.departure.time[1]:02d}"
+                    out_arr = f"{f_out.arrival.date[2]:02d}.{f_out.arrival.date[1]:02d} {f_out.arrival.time[0]:02d}:{f_out.arrival.time[1]:02d}"
+                    in_dep = f"{f_in.departure.date[2]:02d}.{f_in.departure.date[1]:02d} {f_in.departure.time[0]:02d}:{f_in.departure.time[1]:02d}"
+                    in_arr = f"{f_in.arrival.date[2]:02d}.{f_in.arrival.date[1]:02d} {f_in.arrival.time[0]:02d}:{f_in.arrival.time[1]:02d}"
+
+                    carrier_out = " / ".join(best_out.airlines) if best_out.airlines else "Google Flights"
+                    carrier_in = " / ".join(best_in.airlines) if best_in.airlines else "Google Flights"
+                    stops = max(len(best_out.flights) - 1, len(best_in.flights) - 1)
+
+                    return [
+                        RouteOption(
+                            strategy_name=f"Google Flights Canlı ({carrier_out}: {orig} ↔ {city_code})",
+                            outbound_legs=[
+                                TransportLeg(
+                                    mode="flight",
+                                    carrier=carrier_out,
+                                    origin=orig,
+                                    destination=city_code,
+                                    departure_str=out_dep,
+                                    arrival_str=out_arr,
+                                    price_eur_per_person=float(best_out.price),
+                                )
+                            ],
+                            inbound_legs=[
+                                TransportLeg(
+                                    mode="flight",
+                                    carrier=carrier_in,
+                                    origin=city_code,
+                                    destination=orig,
+                                    departure_str=in_dep,
+                                    arrival_str=in_arr,
+                                    price_eur_per_person=float(best_in.price),
+                                )
+                            ],
+                            is_border_hack=False,
+                            max_stops=stops,
+                            booking_hint_url=(
+                                f"https://www.google.com/travel/flights?q=Flights%20to%20{city_code}%20from%20{orig}%20on%20"
+                                f"{d_out_str}%20through%20{d_in_str}"
+                            ),
+                        )
+                    ]
+                return []
+
+            async def _fetch_airport_routes(orig: str) -> List[RouteOption]:
+                cache_key = f"{orig}:{city_code}:{d_out_str}:{d_in_str}"
+                if cache_key in _LIVE_FLIGHT_CACHE:
+                    return _LIVE_FLIGHT_CACHE[cache_key]
+                try:
+                    res_out, res_in = await asyncio.to_thread(_fetch_sync, orig)
+                    routes = _parse_routes(orig, res_out, res_in)
+                    _LIVE_FLIGHT_CACHE[cache_key] = routes
+                    return routes
+                except Exception:
+                    _LIVE_FLIGHT_CACHE[cache_key] = []
+                    return []
+
+            if origin_preference.upper() == "SAW":
+                airports = ["SAW"]
+            elif origin_preference.upper() == "IST":
+                airports = ["IST"]
+            else:
+                airports = ["SAW", "IST"]
+
+            results = await asyncio.gather(
+                *[_fetch_airport_routes(apt) for apt in airports],
+                return_exceptions=True,
+            )
+
+            candidates: List[RouteOption] = []
+            for r in results:
+                if isinstance(r, list):
+                    candidates.extend(r)
+
+            if candidates:
+                best = min(candidates, key=lambda r: r.roundtrip_price_per_person_eur)
+                return [best]
+            return []
         except Exception:
-            pass
-        _LIVE_FLIGHT_CACHE[cache_key] = []
-        return []
+            return []
 

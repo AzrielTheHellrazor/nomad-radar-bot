@@ -48,8 +48,8 @@ def format_deal_telegram_message(deal: DealPackage) -> str:
 
     stay_block = (
         f"🏨 <b>Konaklama ({deal.stay.nights_charged} Gece):</b> {html.escape(deal.stay.title)}\n"
-        f"  ▫️ Puan: ⭐ <b>{deal.stay.rating}/10</b> | Gecelik: <b>{deal.stay.price_per_night_total_eur:.0f}€</b> "
-        f"(Toplam: <b>{deal.stay.total_stay_cost_eur:.0f}€</b> • <i>%{deal.stay.discount_pct} İndirim</i>)"
+        f"  ▫️ Puan: ⭐ <b>{deal.stay.rating}/10</b> | Tahmini Gecelik: <b>~{deal.stay.price_per_night_total_eur:.0f}€</b> "
+        f"(Toplam Konaklama Bütçesi: <b>~{deal.stay.total_stay_cost_eur:.0f}€</b>)"
     )
 
     free_stays_block = ""
@@ -107,7 +107,8 @@ def format_deal_telegram_message(deal: DealPackage) -> str:
         f"✈️ <b>Ulaşım:</b> {html.escape(deal.route.strategy_name)}\n"
         f"<b>Gidiş:</b>\n{out_legs_text}\n"
         f"<b>Dönüş:</b>\n{in_legs_text}\n"
-        f"<i>(Ulaşım Toplamı: {deal.transport_total_eur:.0f}€ / ~{transport_tl:,.0f} TL)</i>\n\n"
+        f"<i>(Ulaşım Toplamı: {deal.transport_total_eur:.0f}€ / ~{transport_tl:,.0f} TL)</i>\n"
+        f"✈️ <b>Canlı Uçuş:</b> <b>{deal.route.roundtrip_price_per_person_eur:.0f}€/kişi</b> (Normali ~{deal.baseline_flight_per_person_eur:.0f}€ • <b>%{deal.flight_discount_pct} İndirim</b>)\n\n"
         f"{stay_block}"
         f"{free_stays_block}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -115,6 +116,9 @@ def format_deal_telegram_message(deal: DealPackage) -> str:
         f"{ai_block}"
         f"\n🔗 <a href=\"{route_url}\">✈️ Ulaşım / Bilet Linki</a>   |   <a href=\"{stay_url}\">🏨 Konaklama Linki</a>"
     )
+
+
+format_deal_card = format_deal_telegram_message
 
 
 def format_holidays_summary(windows: List[TravelWindow]) -> str:

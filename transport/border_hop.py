@@ -1,7 +1,7 @@
 import os
 import httpx
-from datetime import timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 from models import RouteOption, TransportLeg, TravelWindow
 
 
@@ -56,10 +56,14 @@ class BorderHopEngine:
 
         # Canlı modda (%100 gerçek fiyat) Ryanair'de uçuş yoksa uydurma fiyat döndürme!
         live_mode = os.getenv("LIVE_RYANAIR_HTTP", "1") == "1"
-        live_price = await self._try_fetch_ryanair_fare(hub_code, code, window)
-        if live_mode and live_price is None:
+        live_out_price = await self._try_fetch_ryanair_fare(hub_code, code, window.start_dt)
+        live_in_price = await self._try_fetch_ryanair_fare(code, hub_code, window.end_dt)
+
+        if live_mode and (live_out_price is None or live_in_price is None):
             return []
-        one_way_flight_eur = live_price if live_price is not None else base_flight_eur
+
+        out_flight_eur = live_out_price if live_out_price is not None else base_flight_eur
+        in_flight_eur = live_in_price if live_in_price is not None else round(base_flight_eur * 1.05, 2)
 
         hub_name = "Sofya (SOF)" if hub_code == "SOF" else "Selanik (SKG)"
         overland_carrier = (
@@ -88,7 +92,7 @@ class BorderHopEngine:
             destination=code,
             departure_str=f"{window.start_dt.strftime('%d.%m')} 10:15",
             arrival_str=f"{window.start_dt.strftime('%d.%m')} 12:30",
-            price_eur_per_person=one_way_flight_eur,
+            price_eur_per_person=out_flight_eur,
             saves_accommodation_night=False,
         )
 
@@ -100,7 +104,7 @@ class BorderHopEngine:
             destination=hub_code,
             departure_str=f"{window.end_dt.strftime('%d.%m')} 13:20",
             arrival_str=f"{window.end_dt.strftime('%d.%m')} 17:10",
-            price_eur_per_person=round(one_way_flight_eur * 1.05, 2),
+            price_eur_per_person=in_flight_eur,
             saves_accommodation_night=False,
         )
         in_leg_2 = TransportLeg(
@@ -117,6 +121,7 @@ class BorderHopEngine:
         ryanair_url = (
             f"https://www.ryanair.com/gb/en/trip/flights/select?adults=1&originIata={hub_code}"
             f"&destinationIata={code}&dateOut={window.start_dt.strftime('%Y-%m-%d')}"
+            f"&dateIn={window.end_dt.strftime('%Y-%m-%d')}"
         )
 
         return [
@@ -131,13 +136,20 @@ class BorderHopEngine:
         ]
 
     async def _try_fetch_ryanair_fare(
-        self, origin_iata: str, dest_iata: str, window: TravelWindow
+        self, origin_iata: str, dest_iata: str, target_dt: Any
     ) -> Optional[float]:
         """Ryanair açık JSON endpoint'inden gerçek anlık fiyat sorgulamayı dener."""
         if os.getenv("LIVE_RYANAIR_HTTP", "1") != "1":
             return None
-        d_from = (window.start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-        d_to = (window.start_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+        if hasattr(target_dt, "start_dt"):
+            target_date = target_dt.start_dt
+        elif isinstance(target_dt, (datetime, date)):
+            target_date = target_dt
+        else:
+            target_date = datetime.now()
+
+        d_from = (target_date - timedelta(days=1)).strftime("%Y-%m-%d")
+        d_to = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
         cache_key = f"{origin_iata}:{dest_iata}:{d_from}:{d_to}"
         if cache_key in _RYANAIR_FARE_CACHE:
             return _RYANAIR_FARE_CACHE[cache_key]

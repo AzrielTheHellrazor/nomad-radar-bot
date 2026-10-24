@@ -97,3 +97,80 @@ def test_couple_green_plus_burgundy_visa_rules():
     )
     assert pt_couple_with_visa["eligible"] is True
     assert pt_couple_with_visa["visa_cost_eur"] == 0.0
+
+
+def test_expanded_matrix_counts_and_destinations():
+    from calendar_visa.visa_matrix import CITY_NAMES_TR
+    engine = VisaEngine()
+
+    assert len(engine._countries) >= 32
+    assert len(CITY_NAMES_TR) >= 60
+
+    required_countries = {"BG", "RO", "HR", "CH", "BE", "DK", "SE", "KR"}
+    for code in required_countries:
+        country = engine.get_country(code)
+        assert country is not None, f"Missing country: {code}"
+        assert len(country.main_cities) >= 2, f"Expected at least 2 cities for {code}"
+        for city in country.main_cities:
+            assert city in CITY_NAMES_TR, f"City {city} missing from CITY_NAMES_TR"
+
+    # Regional hub expansions
+    it = engine.get_country("IT")
+    assert "BGY" in it.main_cities
+    es = engine.get_country("ES")
+    assert "AGP" in es.main_cities
+    fr = engine.get_country("FR")
+    assert "ORY" in fr.main_cities
+    de = engine.get_country("DE")
+    assert "DUS" in de.main_cities and "STR" in de.main_cities
+    gb = engine.get_country("GB")
+    assert "STN" in gb.main_cities
+
+
+def test_new_countries_visa_evaluation():
+    engine = VisaEngine()
+
+    # Solo mode: all Schengen (BG, RO, HR, CH, BE, DK, SE) and KR are visa-free
+    for code in ["BG", "RO", "HR", "CH", "BE", "DK", "SE", "KR"]:
+        res = engine.evaluate_destination(
+            country_code=code,
+            mode=TravelMode.SOLO,
+            days_until_trip=5,
+            solo_visas=[],
+            couple_visas=[],
+        )
+        assert res["eligible"] is True, f"Solo {code} should be eligible"
+        assert res["visa_cost_eur"] == 0.0
+
+    # Couple mode: Schengen requires Schengen visa for partner
+    for code in ["BG", "RO", "HR", "CH", "BE", "DK", "SE"]:
+        no_visa = engine.evaluate_destination(
+            country_code=code,
+            mode=TravelMode.COUPLE,
+            days_until_trip=5,
+            solo_visas=[],
+            couple_visas=[],
+        )
+        assert no_visa["eligible"] is False, f"Couple {code} without visa should not be eligible"
+
+        with_visa = engine.evaluate_destination(
+            country_code=code,
+            mode=TravelMode.COUPLE,
+            days_until_trip=5,
+            solo_visas=[],
+            couple_visas=["SCHENGEN"],
+        )
+        assert with_visa["eligible"] is True, f"Couple {code} with SCHENGEN visa should be eligible"
+        assert with_visa["visa_cost_eur"] == 0.0
+
+    # Couple mode: KR is visa-free for both
+    kr_couple = engine.evaluate_destination(
+        country_code="KR",
+        mode=TravelMode.COUPLE,
+        days_until_trip=5,
+        solo_visas=[],
+        couple_visas=[],
+    )
+    assert kr_couple["eligible"] is True
+    assert kr_couple["visa_cost_eur"] == 0.0
+

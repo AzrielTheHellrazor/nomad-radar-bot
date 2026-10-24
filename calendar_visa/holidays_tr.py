@@ -55,14 +55,14 @@ class HolidayWindowCalculator:
                 nights=3,
                 is_bridge_holiday=True,
             ),
-            # 19 Mayıs 2027 Çarşamba -> Perşembe-Cuma (2 gün izin) ile 5 gün tatil
+            # 1 Mayıs 2027 Emek ve Dayanışma Günü Hafta Sonu
             TravelWindow(
-                title="19 Mayıs 2027 Köprü Tatili (2 Gün İzinle 5 Gün!)",
-                start_dt=datetime(2027, 5, 18, 19, 0),
-                end_dt=datetime(2027, 5, 23, 23, 59),
-                total_days=5.0,
-                leave_days_required=2.0,
-                nights=5,
+                title="1 Mayıs 2027 Emek ve Dayanışma Günü Hafta Sonu",
+                start_dt=datetime(2027, 4, 30, 19, 0),
+                end_dt=datetime(2027, 5, 2, 23, 59),
+                total_days=2.5,
+                leave_days_required=0.0,
+                nights=2,
                 is_bridge_holiday=True,
             ),
             # 2027 Kurban Bayramı: Arefe 15 Mayıs Cumartesi, 16-19 Mayıs (Paz-Çar) -> Perşembe-Cuma 2 gün izinle 9 gün tatil
@@ -110,7 +110,7 @@ class HolidayWindowCalculator:
     def get_upcoming_windows(
         self,
         reference_date: date | None = None,
-        days_ahead: int = 90,
+        days_ahead: int = 60,
         include_weekends: bool = True,
         include_weekday_deals: bool = True,
     ) -> List[TravelWindow]:
@@ -126,21 +126,26 @@ class HolidayWindowCalculator:
                 results.append(win)
 
         # 2. Öncelik: Yaklaşan Haftasonu Kaçamakları (Cuma 19:00 -> Pazar 23:59, 0 gün izin)
+        # ve Uzatılmış Hafta Sonu Kaçamakları (Cuma 19:00 -> Pazartesi 23:59, 1 gün izin)
         if include_weekends:
             cursor = ref
             weekend_count = 0
+            standard_weekends: List[TravelWindow] = []
+            extended_weekends: List[TravelWindow] = []
             while cursor <= ref + timedelta(days=min(days_ahead, 45)) and weekend_count < 4:
                 # 4 = Friday
                 if cursor.weekday() == 4:
                     fri_start = datetime.combine(cursor, time(19, 0))
                     sun_end = datetime.combine(cursor + timedelta(days=2), time(23, 59))
-                    # Eğer resmi tatil penceresiyle çakışmıyorsa ekle
-                    overlaps = any(
-                        w.is_bridge_holiday and w.start_dt.date() <= cursor <= w.end_dt.date()
+                    mon_end = datetime.combine(cursor + timedelta(days=3), time(23, 59))
+
+                    # Standart haftasonu: Cuma 19:00 -> Pazar 23:59 (0 gün izin)
+                    overlaps_std = any(
+                        w.is_bridge_holiday and not (sun_end < w.start_dt or w.end_dt < fri_start)
                         for w in results
                     )
-                    if not overlaps and fri_start >= ref_dt:
-                        results.append(
+                    if not overlaps_std and fri_start >= ref_dt:
+                        standard_weekends.append(
                             TravelWindow(
                                 title=f"Haftasonu Kaçamağı ({cursor.strftime('%d.%m')} Cuma Akşam - Pazar)",
                                 start_dt=fri_start,
@@ -152,7 +157,28 @@ class HolidayWindowCalculator:
                             )
                         )
                         weekend_count += 1
+
+                    # Uzatılmış haftasonu: Cuma 19:00 -> Pazartesi 23:59 (1 gün izin, 3 gece)
+                    overlaps_ext = any(
+                        w.is_bridge_holiday and not (mon_end < w.start_dt or w.end_dt < fri_start)
+                        for w in results
+                    )
+                    if not overlaps_ext and fri_start >= ref_dt:
+                        extended_weekends.append(
+                            TravelWindow(
+                                title=f"Uzatılmış Hafta Sonu ({cursor.strftime('%d.%m')} Cuma Akşam - Pazartesi)",
+                                start_dt=fri_start,
+                                end_dt=mon_end,
+                                total_days=3.5,
+                                leave_days_required=1.0,
+                                nights=3,
+                                is_weekend_only=True,
+                            )
+                        )
                 cursor += timedelta(days=1)
+
+            results.extend(standard_weekends)
+            results.extend(extended_weekends)
 
         # 3. Öncelik: Hafta İçi Ekstrem Fırsat / Error-Fare Penceresi (Örn: Salı -> Perşembe 2 gece)
         if include_weekday_deals:

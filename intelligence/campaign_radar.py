@@ -8,17 +8,7 @@ RSS_FEEDS = [
     ("Fly4Free Europe", "https://www.fly4free.com/flight-deals/europe/feed/"),
 ]
 
-CURATED_ACTIVE_PROMOS: Dict[str, str] = {
-    "PT": "🔥 WizzAir & Ryanair İberya Sonbahar Kampanyası (%38 İndirim)",
-    "IT": "⚡ Pegasus & Ryanair İtalya Flash İndirimi (19€'dan Başlayan Uçuşlar)",
-    "ES": "🔥 İspanya Köprü Tatili Erken Rezervasyon & Hostel Kampanyası",
-    "ME": "💑 AirMontenegro & Pegasus Balkan Çift Paketi + Booking %40 Genius İndirimi",
-    "RS": "💑 Belgrad Haftasonu & Resmi Tatil Direkt Uçuş İndirimi",
-    "BA": "⚡ AJet & Pegasus Saraybosna Kampanyası (Vizesiz Balkan Fırsatı)",
-    "GR_ISLANDS": "⛴️ Yunan Adaları Kapıda Ekspres Vize + Son Dakika Butik Otel İndirimi",
-    "HU": "🔥 WizzAir Budapeşte 14€ Kampanyası",
-    "GE": "🪪 Kimlikle Vizesiz Tiflis/Batum Flash Kampanya",
-}
+CURATED_ACTIVE_PROMOS: Dict[str, str] = {}
 
 
 class CampaignRadar:
@@ -26,6 +16,8 @@ class CampaignRadar:
     SecretFlying, Fly4Free ve havayolu (Pegasus, AJet, Ryanair, WizzAir, THY)
     kampanya duyurularını tarar, hata fiyatlarını (Error Fare) ve aktif indirim rozetlerini döndürür.
     """
+
+    CURATED_ACTIVE_PROMOS: Dict[str, str] = CURATED_ACTIVE_PROMOS
 
     async def fetch_live_error_fares(self, limit: int = 5) -> List[Dict[str, str]]:
         deals: List[Dict[str, str]] = []

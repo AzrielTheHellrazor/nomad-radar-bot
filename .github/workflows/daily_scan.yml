@@ -23,8 +23,24 @@ jobs:
       - name: Bağımlılıkları Yükle
         run: pip install -r requirements.txt
 
+      - name: SQLite Veritabanı Durumunu Geri Yükle (actions/cache@v4)
+        uses: actions/cache/restore@v4
+        id: restore-db-cache
+        with:
+          path: nomad_radar.db
+          key: nomad-radar-db-${{ github.run_id }}
+          restore-keys: |
+            nomad-radar-db-
+
       - name: Günlük Fırsat Taramasını Çalıştır ve Telegram'a Gönder
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python main.py --scan-once
+
+      - name: SQLite Veritabanı Durumunu Kaydet (actions/cache@v4)
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: nomad_radar.db
+          key: nomad-radar-db-${{ github.run_id }}

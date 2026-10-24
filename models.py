@@ -116,8 +116,30 @@ class DealPackage:
     visa_cost_total_eur: float = 0.0
     visa_note: str = ""
     campaign_badge: Optional[str] = None
+    baseline_flight_per_person_eur: float = 0.0
+    flight_discount_pct: int = 0
     discount_vs_baseline_pct: int = 0
     ai_commentary: str = ""
+    _initialized: bool = field(default=False, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.flight_discount_pct != 0 and self.discount_vs_baseline_pct == 0:
+            self.discount_vs_baseline_pct = self.flight_discount_pct
+        elif self.discount_vs_baseline_pct != 0 and self.flight_discount_pct == 0:
+            self.flight_discount_pct = self.discount_vs_baseline_pct
+        elif self.flight_discount_pct != self.discount_vs_baseline_pct:
+            self.discount_vs_baseline_pct = self.flight_discount_pct
+        self._initialized = True
+
+    def __setattr__(self, name: str, value: object) -> None:
+        super().__setattr__(name, value)
+        if getattr(self, "_initialized", False):
+            if name == "flight_discount_pct":
+                if super().__getattribute__("discount_vs_baseline_pct") != value:
+                    super().__setattr__("discount_vs_baseline_pct", value)
+            elif name == "discount_vs_baseline_pct":
+                if super().__getattribute__("flight_discount_pct") != value:
+                    super().__setattr__("flight_discount_pct", value)
 
     @property
     def transport_total_eur(self) -> float:
@@ -142,7 +164,10 @@ class UserSettings:
     active_mode: TravelMode = TravelMode.BOTH
     solo_max_budget_eur: float = 220.0
     couple_max_budget_eur: float = 550.0  # 2 Kişi toplam bütçe
-    solo_watchlist: List[str] = field(default_factory=lambda: ["PT", "IT", "ES", "FR", "NL", "DE", "AT", "HU", "CZ", "PL", "GR", "BA", "RS", "ME", "GB"])
+    solo_watchlist: List[str] = field(default_factory=lambda: [
+        "PT", "IT", "ES", "FR", "NL", "DE", "AT", "HU", "CZ", "PL", "GR", "BA", "RS", "ME", "GB",
+        "AL", "MK", "GE", "GR_ISLANDS", "EG_SHARM", "MA", "IE"
+    ])
     couple_watchlist: List[str] = field(default_factory=lambda: ["ME", "RS", "BA", "AL", "MK", "GR_ISLANDS", "GE", "EG_SHARM", "MA", "TH", "JP"])
     solo_visas: List[str] = field(default_factory=list)      # Örn: ["UK", "USA"]
     couple_visas: List[str] = field(default_factory=list)    # Örn: ["SCHENGEN", "UK"] (Kız arkadaşınızın aldığı vizeler)

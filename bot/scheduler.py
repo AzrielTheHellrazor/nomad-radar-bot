@@ -22,7 +22,7 @@ class DealScanOrchestrator:
         self,
         chat_id: int,
         reference_date: date | None = None,
-        days_ahead: int = 45,
+        days_ahead: int = 60,
         specific_country: Optional[str] = None,
         max_results_per_mode: int = 3,
         force_notify: bool = False,
@@ -39,32 +39,42 @@ class DealScanOrchestrator:
         final_deals: List[DealPackage] = []
 
         for mode in modes_to_run:
-            watchlist = (
-                [specific_country.upper()]
-                if specific_country
-                else (
-                    settings.solo_watchlist
-                    if mode == TravelMode.SOLO
-                    else settings.couple_watchlist
-                )
-            )
+            if specific_country:
+                watchlist = [specific_country.upper()]
+            elif mode == TravelMode.SOLO:
+                watchlist = list(settings.solo_watchlist)
+            else:
+                watchlist = list(settings.couple_watchlist)
+                couple_visas_norm = {v.upper() for v in settings.couple_visas}
+                if couple_visas_norm:
+                    for c in self.scorer.visa_engine.list_all_countries():
+                        if c.visa_group.upper() in couple_visas_norm or c.code.upper() in couple_visas_norm:
+                            if c.code not in watchlist:
+                                watchlist.append(c.code)
             budget = (
                 settings.solo_max_budget_eur
                 if mode == TravelMode.SOLO
                 else settings.couple_max_budget_eur
             )
 
+            import asyncio
+            sem = asyncio.Semaphore(4)
+
+            async def _scan_code(c_code: str) -> List[DealPackage]:
+                async with sem:
+                    return await self.scorer.scan_and_score_country(
+                        country_code=c_code,
+                        mode=mode,
+                        reference_date=ref,
+                        days_ahead=days_ahead,
+                        solo_visas=settings.solo_visas,
+                        couple_visas=settings.couple_visas,
+                        max_budget_eur=budget,
+                    )
+
+            country_deal_lists = await asyncio.gather(*[_scan_code(code) for code in watchlist])
             mode_candidates: List[DealPackage] = []
-            for code in watchlist:
-                deals = await self.scorer.scan_and_score_country(
-                    country_code=code,
-                    mode=mode,
-                    reference_date=ref,
-                    days_ahead=days_ahead,
-                    solo_visas=settings.solo_visas,
-                    couple_visas=settings.couple_visas,
-                    max_budget_eur=budget,
-                )
+            for deals in country_deal_lists:
                 for d in deals:
                     if force_notify or self.db.should_notify_deal(
                         d.deal_key, d.grand_total_eur

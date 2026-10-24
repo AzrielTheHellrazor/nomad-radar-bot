@@ -85,4 +85,4 @@ def test_couple_mode_excludes_free_stays_and_hostels_and_returns_high_rated_priv
         assert "hostel" not in s.stay_type.lower()
         assert s.rating >= 8.0
         assert s.nights_charged == 4
-        assert s.discount_pct >= 30
+        assert s.discount_pct == 0

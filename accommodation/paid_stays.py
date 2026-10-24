@@ -50,6 +50,33 @@ CITY_STAY_RATES: Dict[str, Tuple[float, float]] = {
     "ICN": (19.0, 60.0),
     "LHR": (25.0, 79.0),
     "DUB": (26.0, 82.0),
+    "BGY": (18.0, 56.0),
+    "AGP": (19.0, 58.0),
+    "ORY": (25.0, 75.0),
+    "DUS": (20.0, 60.0),
+    "STR": (21.0, 62.0),
+    "STN": (23.0, 72.0),
+    "LGW": (24.0, 75.0),
+    "MAN": (21.0, 65.0),
+    "EDI": (24.0, 76.0),
+    "SOF": (12.0, 38.0),
+    "VAR": (13.0, 40.0),
+    "BOJ": (12.0, 36.0),
+    "OTP": (13.0, 42.0),
+    "CLJ": (14.0, 44.0),
+    "ZAG": (16.0, 50.0),
+    "DBV": (22.0, 68.0),
+    "SPU": (20.0, 64.0),
+    "ZRH": (32.0, 95.0),
+    "GVA": (34.0, 98.0),
+    "BSL": (30.0, 90.0),
+    "BRU": (22.0, 68.0),
+    "CRL": (18.0, 54.0),
+    "CPH": (28.0, 85.0),
+    "BLL": (25.0, 78.0),
+    "ARN": (26.0, 80.0),
+    "GOT": (24.0, 75.0),
+    "PUS": (18.0, 55.0),
 }
 
 
@@ -73,38 +100,42 @@ class PaidStayFinder:
 
         checkin = window.start_dt.strftime("%Y-%m-%d")
         checkout = window.end_dt.strftime("%Y-%m-%d")
+        guests = 1 if mode == TravelMode.SOLO else 2
         booking_search_url = (
             f"https://www.booking.com/searchresults.tr.html?ss={city_tr}"
-            f"&checkin={checkin}&checkout={checkout}&nflt=review_score%3D80"
+            f"&checkin={checkin}&checkout={checkout}&group_adults={guests}&no_rooms=1&nflt=review_score%3D80"
         )
         airbnb_search_url = (
-            f"https://www.airbnb.com.tr/s/{city_tr}/homes?checkin={checkin}&checkout={checkout}"
+            f"https://www.airbnb.com.tr/s/{city_tr}/homes?checkin={checkin}&checkout={checkout}&adults={guests}"
         )
 
         if mode == TravelMode.SOLO:
-            hostelworld_url = f"https://www.hostelworld.com/st/hostels/europe/{city_tr.lower()}/"
+            hostelworld_url = (
+                f"https://www.hostelworld.com/st/hostels/europe/{city_tr.lower()}/"
+                f"?dateFrom={checkin}&dateTo={checkout}&number_of_guests=1"
+            )
             return [
                 StayOption(
-                    provider="Hostelworld",
-                    title=f"{city_tr} Central Social Hostel (8.9 Puan - Kahvaltı Dahil Kampanya)",
+                    provider="Hostelworld (8.0+ Puanlı Bütçe Konaklama)",
+                    title=f"{city_tr} 8.0+ Puanlı Hostel / Konukevi Bütçesi (~{solo_base:.0f}€/gece × {nights_needed} gece)",
                     stay_type="hostel_8plus",
                     city=city_tr,
                     rating=8.9,
                     price_per_night_total_eur=solo_base,
                     nights_charged=nights_needed,
-                    discount_pct=42,
+                    discount_pct=0,
                     is_free_stay=False,
                     booking_url=hostelworld_url,
                 ),
                 StayOption(
-                    provider="Airbnb (Özel Oda & Yeni İlan İndirimi)",
-                    title=f"{city_tr} Merkezde Superhost Yanında Özel Oda + Üniversite Konukevi Alternatifi",
+                    provider="Airbnb (Özel Oda Tahmini Bütçe)",
+                    title=f"{city_tr} Merkez Özel Oda Bütçesi (~{round(solo_base * 1.35):.0f}€/gece × {nights_needed} gece)",
                     stay_type="private_room_solo",
                     city=city_tr,
                     rating=8.7,
                     price_per_night_total_eur=round(solo_base * 1.35, 2),
                     nights_charged=nights_needed,
-                    discount_pct=38,
+                    discount_pct=0,
                     is_free_stay=False,
                     booking_url=airbnb_search_url,
                 ),
@@ -113,26 +144,26 @@ class PaidStayFinder:
         # COUPLE MODE: Sadece 8.0+ puanlı 2 kişilik özel otel veya tam daire Airbnb!
         return [
             StayOption(
-                provider="Booking.com (Genius + Mobil Özel %42 İndirim)",
-                title=f"{city_tr} Old Town Boutique Hotel 4★ (Çift Kişilik Özel Oda - 8.8 Puan)",
+                provider="Booking.com (8.0+ Puanlı Özel Otel)",
+                title=f"{city_tr} 8.0+ Puanlı Özel Otel Bütçesi (~{couple_base:.0f}€/gece × {nights_needed} gece)",
                 stay_type="private_hotel_8plus",
                 city=city_tr,
                 rating=8.8,
                 price_per_night_total_eur=couple_base,
                 nights_charged=nights_needed,
-                discount_pct=42,
+                discount_pct=0,
                 is_free_stay=False,
                 booking_url=booking_search_url,
             ),
             StayOption(
-                provider="Airbnb (Son Dakika Tam Daire İndirimi)",
-                title=f"{city_tr} Merkezde Teraslı Tam Daire (Entire Place - Superhost 9.1 Puan)",
+                provider="Airbnb (Tam Daire Tahmini Bütçe)",
+                title=f"{city_tr} Tam Daire (Entire Place) Airbnb Bütçesi (~{round(couple_base * 1.08):.0f}€/gece × {nights_needed} gece)",
                 stay_type="entire_airbnb_8plus",
                 city=city_tr,
                 rating=9.1,
                 price_per_night_total_eur=round(couple_base * 1.08, 2),
                 nights_charged=nights_needed,
-                discount_pct=36,
+                discount_pct=0,
                 is_free_stay=False,
                 booking_url=airbnb_search_url,
             ),
