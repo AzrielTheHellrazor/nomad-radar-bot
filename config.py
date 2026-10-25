@@ -58,11 +58,13 @@ def get_eur_to_try_rate() -> float:
 def get_usd_to_try_rate() -> float:
     return get_fx_rates()["USD_TRY"]
 
-# Optional External Flight APIs (Kiwi Tequila, Amadeus, SerpApi)
+# Optional External Flight APIs (Kiwi Tequila, Amadeus, SerpApi, Travelpayouts)
 TEQUILA_API_KEY = os.getenv("TEQUILA_API_KEY", "")
 AMADEUS_API_KEY = os.getenv("AMADEUS_API_KEY", "")
 AMADEUS_API_SECRET = os.getenv("AMADEUS_API_SECRET", "")
-SERPAPI_KEY = os.getenv("SERPAPI_KEY", "")
+SERPAPI_API_KEY: str = os.getenv("SERPAPI_API_KEY", "").strip()
+SERPAPI_KEY = SERPAPI_API_KEY or os.getenv("SERPAPI_KEY", "")
+TRAVELPAYOUTS_TOKEN: str = os.getenv("TRAVELPAYOUTS_TOKEN", "").strip()
 
 DATABASE_PATH = os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "nomad_radar.db"))
 SCAN_INTERVAL_MINUTES = int(os.getenv("SCAN_INTERVAL_MINUTES", "30"))

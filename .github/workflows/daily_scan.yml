@@ -36,6 +36,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
         run: python main.py --scan-once
 
       - name: SQLite Veritabanı Durumunu Kaydet (actions/cache@v4)

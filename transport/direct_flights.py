@@ -3,6 +3,7 @@ import httpx
 from typing import Dict, List, Optional, Tuple
 from config import TEQUILA_API_KEY
 from models import RouteOption, TransportLeg, TravelMode, TravelWindow
+from transport.external_mcp_apis import KiwiMCPClient, SerpApiClient
 
 
 # İstanbul (IST/SAW) çıkışlı rotalar için gerçekçi baz fiyat ve havayolu haritası
@@ -234,6 +235,14 @@ class DirectFlightScanner:
     Sadece birim testlerinde (`LIVE_FLIGHTS_HTTP=0`) çevrimdışı test verisi kullanır.
     """
 
+    def __init__(self, use_live_http: Optional[bool] = None):
+        if use_live_http is not None:
+            self.use_live_http = use_live_http
+        else:
+            self.use_live_http = os.getenv("LIVE_FLIGHTS_HTTP", "1") == "1"
+        self._kiwi_client = KiwiMCPClient()
+        self._serp_client = SerpApiClient()
+
     def get_typical_rt_flight_eur(self, city_code: str) -> float:
         """Helper delegation to get_typical_rt_flight_eur."""
         return get_typical_rt_flight_eur(city_code)
@@ -252,10 +261,19 @@ class DirectFlightScanner:
                 return live
 
         # Varsayılan olarak (%100 Canlı Mod): Google Flights (fast-flights) üzerinden gerçek fiyatları çek!
-        if os.getenv("LIVE_FLIGHTS_HTTP", "1") == "1":
-            return await self._query_keyless_google_or_kiwi(
+        if self.use_live_http:
+            res = await self._query_keyless_google_or_kiwi(
                 window, code, origin_preference=origin_preference
             )
+            if res:
+                return res
+            # Scraping boş döndüğünde Kiwi MCP ve SerpApi fallback devreye girer
+            fallback = await self._query_mcp_or_serp_fallback(
+                window, code, origin_preference=origin_preference
+            )
+            if fallback:
+                return fallback
+            return []
 
         carrier, origin_airport, base_one_way = DIRECT_ROUTE_PROFILES.get(
             code, ("Pegasus / AJet", "SAW", 95.0)
@@ -375,6 +393,118 @@ class DirectFlightScanner:
                 return routes
         except Exception:
             return []
+
+    async def _query_mcp_or_serp_fallback(
+        self, window: TravelWindow, city_code: str, origin_preference: str = "CHEAPEST"
+    ) -> List[RouteOption]:
+        d_out_str = window.start_dt.strftime("%Y-%m-%d")
+        d_in_str = window.end_dt.strftime("%Y-%m-%d")
+        orig = (
+            origin_preference.upper()
+            if origin_preference.upper() in ("SAW", "IST")
+            else "IST"
+        )
+
+        # 1. Kiwi MCP Official Keyless JSON-RPC Fallback
+        try:
+            kiwi_res = await self._kiwi_client.search_roundtrip(
+                fly_from=orig,
+                fly_to=city_code,
+                d_out_iso=d_out_str,
+                d_in_iso=d_in_str,
+            )
+            if kiwi_res:
+                best = kiwi_res[0]
+                price = float(best["price_eur"])
+                half_out = round(price / 2.0, 2)
+                half_in = round(price - half_out, 2)
+                carrier = best.get("carrier") or "Kiwi Verified"
+                booking_url = best.get("booking_url") or (
+                    f"https://www.kiwi.com/en/search/results/{orig}/{city_code}/{d_out_str}/{d_in_str}"
+                )
+                return [
+                    RouteOption(
+                        strategy_name=f"Kiwi MCP Canlı ({carrier}: {orig} ↔ {city_code})",
+                        outbound_legs=[
+                            TransportLeg(
+                                mode="flight",
+                                carrier=carrier,
+                                origin=orig,
+                                destination=city_code,
+                                departure_str=f"{window.start_dt.strftime('%d.%m')} 14:00",
+                                arrival_str=f"{window.start_dt.strftime('%d.%m')} 17:30",
+                                price_eur_per_person=half_out,
+                            )
+                        ],
+                        inbound_legs=[
+                            TransportLeg(
+                                mode="flight",
+                                carrier=carrier,
+                                origin=city_code,
+                                destination=orig,
+                                departure_str=f"{window.end_dt.strftime('%d.%m')} 19:30",
+                                arrival_str=f"{window.end_dt.strftime('%d.%m')} 23:00",
+                                price_eur_per_person=half_in,
+                            )
+                        ],
+                        is_border_hack=False,
+                        max_stops=best.get("stops", 1),
+                        booking_hint_url=booking_url,
+                    )
+                ]
+        except Exception:
+            pass
+
+        # 2. SerpApi Google Flights Fallback
+        try:
+            serp_res = await self._serp_client.search_flights_fallback(
+                orig=orig,
+                dest=city_code,
+                d_out=d_out_str,
+                d_in=d_in_str,
+            )
+            if serp_res:
+                price = float(serp_res["price_eur"])
+                half_out = round(price / 2.0, 2)
+                half_in = round(price - half_out, 2)
+                carrier = serp_res.get("carrier") or "Google Flights"
+                booking_url = serp_res.get("booking_url") or (
+                    f"https://www.google.com/travel/flights?q=Flights%20to%20{city_code}%20from%20{orig}"
+                )
+                return [
+                    RouteOption(
+                        strategy_name=f"SerpApi Canlı ({carrier}: {orig} ↔ {city_code})",
+                        outbound_legs=[
+                            TransportLeg(
+                                mode="flight",
+                                carrier=carrier,
+                                origin=orig,
+                                destination=city_code,
+                                departure_str=f"{window.start_dt.strftime('%d.%m')} 14:00",
+                                arrival_str=f"{window.start_dt.strftime('%d.%m')} 17:30",
+                                price_eur_per_person=half_out,
+                            )
+                        ],
+                        inbound_legs=[
+                            TransportLeg(
+                                mode="flight",
+                                carrier=carrier,
+                                origin=city_code,
+                                destination=orig,
+                                departure_str=f"{window.end_dt.strftime('%d.%m')} 19:30",
+                                arrival_str=f"{window.end_dt.strftime('%d.%m')} 23:00",
+                                price_eur_per_person=half_in,
+                            )
+                        ],
+                        is_border_hack=False,
+                        max_stops=serp_res.get("stops", 1),
+                        booking_hint_url=booking_url,
+                    )
+                ]
+        except Exception:
+            pass
+
+        return []
 
     async def _query_keyless_google_or_kiwi(
         self, window: TravelWindow, city_code: str, origin_preference: str = "CHEAPEST"

@@ -14,6 +14,10 @@ class MultiModalFerryBusEngine:
     - Orta Asya Vizesiz Köprüsü (SAW ↔ ALA Almatı + Eastar Jet ↔ ICN Seul)
     """
 
+    def __init__(self):
+        from transport.external_mcp_apis import FerryhopperMCPClient
+        self._ferryhopper_client = FerryhopperMCPClient()
+
     async def build_multimodal_routes(
         self, window: TravelWindow, city_code: str, mode: TravelMode = TravelMode.SOLO
     ) -> List[RouteOption]:
@@ -22,7 +26,7 @@ class MultiModalFerryBusEngine:
 
         # 1. Ege Adaları Feribotları (RHO, JMK) - Solo & Couple uyumlu
         if code in ("RHO", "JMK"):
-            routes.extend(self._build_aegean_ferry_routes(window, code, mode))
+            routes.extend(await self._build_aegean_ferry_routes(window, code, mode))
 
         # 2. Kore ↔ Japonya Feribot Köprüsü (FUK, KIX) - Solo & Couple uyumlu
         if code in ("FUK", "KIX"):
@@ -41,15 +45,33 @@ class MultiModalFerryBusEngine:
 
         return routes
 
-    def _build_aegean_ferry_routes(
+    async def _build_aegean_ferry_routes(
         self, window: TravelWindow, city_code: str, mode: TravelMode
     ) -> List[RouteOption]:
         routes: List[RouteOption] = []
         d_out = window.start_dt.strftime("%d.%m")
         d_in = window.end_dt.strftime("%d.%m")
+        d_out_iso = window.start_dt.strftime("%Y-%m-%d")
 
         if city_code == "RHO":
             # Rodos: Dalaman Uçuşu + Marmaris/Fethiye Hızlı Katamaran Feribot
+            ferry_carrier = "Yeşil Marmaris / Tilos Hızlı Katamaran Feribot"
+            ferry_price = 42.0
+            ferry_link = "https://www.yesilmarmaris.com/"
+
+            if os.getenv("LIVE_FLIGHTS_HTTP", "1") == "1":
+                try:
+                    live_ferry = await self._ferryhopper_client.search_ferry_price_eur(
+                        "Marmaris", "Rhodes", d_out_iso
+                    )
+                    if live_ferry:
+                        ferry_price = live_ferry[0]
+                        ferry_carrier = f"{live_ferry[1]} Hızlı Katamaran Feribot"
+                        if live_ferry[2]:
+                            ferry_link = live_ferry[2]
+                except Exception:
+                    pass
+
             out_leg_1 = TransportLeg(
                 mode="flight",
                 carrier="Pegasus / AJet (İstanbul ↔ Dalaman)",
@@ -62,22 +84,22 @@ class MultiModalFerryBusEngine:
             )
             out_leg_2 = TransportLeg(
                 mode="ferry",
-                carrier="Yeşil Marmaris / Tilos Hızlı Katamaran Feribot",
+                carrier=ferry_carrier,
                 origin="Marmaris Port",
                 destination="RHO",
                 departure_str=f"{d_out} 11:30",
                 arrival_str=f"{d_out} 12:30",
-                price_eur_per_person=42.0,
+                price_eur_per_person=ferry_price,
                 saves_accommodation_night=False,
             )
             in_leg_1 = TransportLeg(
                 mode="ferry",
-                carrier="Yeşil Marmaris / Tilos Hızlı Katamaran Feribot",
+                carrier=ferry_carrier,
                 origin="RHO",
                 destination="Marmaris Port",
                 departure_str=f"{d_in} 17:00",
                 arrival_str=f"{d_in} 18:00",
-                price_eur_per_person=42.0,
+                price_eur_per_person=ferry_price,
                 saves_accommodation_night=False,
             )
             in_leg_2 = TransportLeg(
@@ -98,12 +120,31 @@ class MultiModalFerryBusEngine:
                     inbound_legs=[in_leg_1, in_leg_2],
                     is_border_hack=False,
                     max_stops=1,
-                    booking_hint_url="https://www.yesilmarmaris.com/",
+                    booking_hint_url=ferry_link,
                 )
             )
 
         elif city_code == "JMK":
             # Sakız / Midilli / Mikonos: İzmir Uçuşu + Çeşme/Ayvalık Hızlı Feribot
+            ferry_carrier_out = "Turyol / Jalem Tur Hızlı Feribot (Çeşme ↔ Sakız / Ayvalık ↔ Midilli)"
+            ferry_carrier_in = "Turyol / Jalem Tur Hızlı Feribot"
+            ferry_price = 32.0
+            ferry_link = "https://www.turyol.com/"
+
+            if os.getenv("LIVE_FLIGHTS_HTTP", "1") == "1":
+                try:
+                    live_ferry = await self._ferryhopper_client.search_ferry_price_eur(
+                        "Cesme", "Chios", d_out_iso
+                    )
+                    if live_ferry:
+                        ferry_price = live_ferry[0]
+                        ferry_carrier_out = f"{live_ferry[1]} Hızlı Feribot"
+                        ferry_carrier_in = f"{live_ferry[1]} Hızlı Feribot"
+                        if live_ferry[2]:
+                            ferry_link = live_ferry[2]
+                except Exception:
+                    pass
+
             out_leg_1 = TransportLeg(
                 mode="flight",
                 carrier="Pegasus / AJet (İstanbul ↔ İzmir ADB)",
@@ -116,22 +157,22 @@ class MultiModalFerryBusEngine:
             )
             out_leg_2 = TransportLeg(
                 mode="ferry",
-                carrier="Turyol / Jalem Tur Hızlı Feribot (Çeşme ↔ Sakız / Ayvalık ↔ Midilli)",
+                carrier=ferry_carrier_out,
                 origin="Çeşme Port",
                 destination="JMK",
                 departure_str=f"{d_out} 11:30",
                 arrival_str=f"{d_out} 12:15",
-                price_eur_per_person=32.0,
+                price_eur_per_person=ferry_price,
                 saves_accommodation_night=False,
             )
             in_leg_1 = TransportLeg(
                 mode="ferry",
-                carrier="Turyol / Jalem Tur Hızlı Feribot",
+                carrier=ferry_carrier_in,
                 origin="JMK",
                 destination="Çeşme Port",
                 departure_str=f"{d_in} 17:30",
                 arrival_str=f"{d_in} 18:15",
-                price_eur_per_person=32.0,
+                price_eur_per_person=ferry_price,
                 saves_accommodation_night=False,
             )
             in_leg_2 = TransportLeg(
@@ -152,7 +193,7 @@ class MultiModalFerryBusEngine:
                     inbound_legs=[in_leg_1, in_leg_2],
                     is_border_hack=False,
                     max_stops=1,
-                    booking_hint_url="https://www.turyol.com/",
+                    booking_hint_url=ferry_link,
                 )
             )
 
