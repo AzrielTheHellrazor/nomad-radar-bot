@@ -102,6 +102,129 @@ def get_typical_rt_flight_eur(city_code: str) -> float:
 
 _LIVE_FLIGHT_CACHE: Dict[str, List[RouteOption]] = {}
 
+LONG_HAUL_FULL_SERVICE = {"NRT", "HND", "KIX", "FUK", "ICN", "PUS", "BKK", "HKT"}
+
+
+def _parse_all_flight_buckets(html: str):
+    """
+    Parses BOTH payload[2][0] ('Best/Cheapest flights') and payload[3][0] ('Other flights')
+    from script.ds:1 in Google Flights response so cheaper featured fares are never missed.
+    """
+    import json
+    from selectolax.lexbor import LexborHTMLParser
+    from fast_flights.model import (
+        Airline,
+        Airport,
+        Alliance,
+        CarbonEmission,
+        Flights,
+        JsMetadata,
+        SimpleDatetime,
+        SingleFlight,
+    )
+    from fast_flights.parser import ResultList, _parse_time
+
+    parser = LexborHTMLParser(html)
+    script = parser.css_first(r"script.ds\:1")
+    if not script:
+        return None
+
+    js = script.text()
+    if "data:" not in js:
+        return None
+
+    data = js.split("data:", 1)[1].rsplit(",", 1)[0]
+    if data.endswith("errorHasStatus: true"):
+        return None
+
+    try:
+        payload = json.loads(data)
+    except Exception:
+        return None
+
+    alliances = []
+    airlines = []
+    try:
+        if len(payload) > 7 and payload[7] and len(payload[7]) > 1:
+            alliances_data = payload[7][1][0] or []
+            airlines_data = payload[7][1][1] or []
+            for code, name in alliances_data:
+                alliances.append(Alliance(code=code, name=name))
+            for code, name in airlines_data:
+                airlines.append(Airline(code=code, name=name))
+    except Exception:
+        pass
+
+    meta = JsMetadata(alliances=alliances, airlines=airlines)
+    flights = ResultList()
+
+    # Iterate both payload[2][0] ('Best/Cheapest flights') and payload[3][0] ('Other flights')
+    buckets = []
+    if len(payload) > 2 and payload[2] and len(payload[2]) > 0 and payload[2][0]:
+        buckets.append(payload[2][0])
+    if len(payload) > 3 and payload[3] and len(payload[3]) > 0 and payload[3][0]:
+        buckets.append(payload[3][0])
+
+    for bucket in buckets:
+        for k in bucket:
+            try:
+                flight = k[0]
+                price = k[1][0][1]
+                typ = flight[0]
+                flight_airlines = flight[1]
+
+                sg_flights = []
+                for single_flight in flight[2]:
+                    from_airport = Airport(code=single_flight[3], name=single_flight[4])
+                    to_airport = Airport(code=single_flight[6], name=single_flight[5])
+                    departure_time = _parse_time(single_flight[8])
+                    departure_date = tuple(single_flight[20])
+                    departure = SimpleDatetime(date=departure_date, time=departure_time)
+
+                    arrival_time = _parse_time(single_flight[10])
+                    arrival_date = tuple(single_flight[21])
+                    arrival = SimpleDatetime(date=arrival_date, time=arrival_time)
+
+                    plane_type = single_flight[17]
+                    duration = single_flight[11]
+
+                    sg_flights.append(
+                        SingleFlight(
+                            from_airport=from_airport,
+                            to_airport=to_airport,
+                            departure=departure,
+                            arrival=arrival,
+                            duration=duration,
+                            plane_type=plane_type,
+                        )
+                    )
+
+                carbon = CarbonEmission(typical_on_route=0, emission=0)
+                try:
+                    if len(flight) > 22 and flight[22]:
+                        extras = flight[22]
+                        carbon = CarbonEmission(
+                            typical_on_route=extras[8] if len(extras) > 8 else 0,
+                            emission=extras[7] if len(extras) > 7 else 0,
+                        )
+                except Exception:
+                    pass
+
+                flights.append(
+                    Flights(
+                        type=typ,
+                        price=price,
+                        airlines=flight_airlines,
+                        flights=sg_flights,
+                        carbon=carbon,
+                    )
+                )
+            except Exception:
+                continue
+
+    flights.metadata = meta
+    return flights
+
 
 class DirectFlightScanner:
     """
@@ -291,7 +414,15 @@ class DirectFlightScanner:
                                 "https://www.google.com/travel/flights", params=params, headers=headers
                             ).text
 
-                    return fast_flights.get_flights(q_obj, integration=_ConsentBypassFetcher())
+                    fetcher = _ConsentBypassFetcher()
+                    try:
+                        html = fetcher.fetch_html(q_obj)
+                        custom_res = _parse_all_flight_buckets(html)
+                        if custom_res is not None and len(custom_res) > 0:
+                            return custom_res
+                    except Exception:
+                        pass
+                    return fast_flights.get_flights(q_obj, integration=fetcher)
                 return fast_flights.get_flights(q_obj)
 
             def _fetch_sync(orig: str):
@@ -327,13 +458,48 @@ class DirectFlightScanner:
                         currency="EUR",
                         language="en",
                     )
-                    return _call_get_flights(q_out), _call_get_flights(q_in)
-                except Exception:
-                    return None, None
+                    res_out = _call_get_flights(q_out)
+                    res_in = _call_get_flights(q_in)
 
-            def _parse_routes(orig: str, res_out, res_in) -> List[RouteOption]:
+                    res_rt = None
+                    if city_code in LONG_HAUL_FULL_SERVICE:
+                        try:
+                            q_rt = fast_flights.create_query(
+                                flights=[
+                                    fast_flights.FlightQuery(
+                                        date=d_out_str,
+                                        from_airport=orig,
+                                        to_airport=city_code,
+                                        max_stops=1,
+                                        earliest_departure_hour=earliest_hr,
+                                    ),
+                                    fast_flights.FlightQuery(
+                                        date=d_in_str,
+                                        from_airport=city_code,
+                                        to_airport=orig,
+                                        max_stops=1,
+                                    ),
+                                ],
+                                trip="round-trip",
+                                seat="economy",
+                                passengers=fast_flights.Passengers(adults=1),
+                                currency="EUR",
+                                language="en",
+                            )
+                            res_rt = _call_get_flights(q_rt)
+                        except Exception:
+                            res_rt = None
+
+                    return res_out, res_in, res_rt
+                except Exception:
+                    return None, None, None
+
+            def _parse_routes(orig: str, res_out, res_in, res_rt=None) -> List[RouteOption]:
                 valid_out = [x for x in (res_out or []) if getattr(x, "price", 0) and getattr(x, "flights", None)]
                 valid_in = [x for x in (res_in or []) if getattr(x, "price", 0) and getattr(x, "flights", None)]
+                valid_rt = [x for x in (res_rt or []) if getattr(x, "price", 0) and getattr(x, "flights", None)]
+
+                route_candidates: List[RouteOption] = []
 
                 if valid_out and valid_in:
                     best_out = sorted(valid_out, key=lambda x: x.price)[0]
@@ -350,39 +516,98 @@ class DirectFlightScanner:
                     carrier_in = " / ".join(best_in.airlines) if best_in.airlines else "Google Flights"
                     stops = max(len(best_out.flights) - 1, len(best_in.flights) - 1)
 
-                    return [
-                        RouteOption(
-                            strategy_name=f"Google Flights Canlı ({carrier_out}: {orig} ↔ {city_code})",
-                            outbound_legs=[
-                                TransportLeg(
-                                    mode="flight",
-                                    carrier=carrier_out,
-                                    origin=orig,
-                                    destination=city_code,
-                                    departure_str=out_dep,
-                                    arrival_str=out_arr,
-                                    price_eur_per_person=float(best_out.price),
-                                )
-                            ],
-                            inbound_legs=[
-                                TransportLeg(
-                                    mode="flight",
-                                    carrier=carrier_in,
-                                    origin=city_code,
-                                    destination=orig,
-                                    departure_str=in_dep,
-                                    arrival_str=in_arr,
-                                    price_eur_per_person=float(best_in.price),
-                                )
-                            ],
-                            is_border_hack=False,
-                            max_stops=stops,
-                            booking_hint_url=(
-                                f"https://www.google.com/travel/flights?q=Flights%20to%20{city_code}%20from%20{orig}%20on%20"
-                                f"{d_out_str}%20through%20{d_in_str}"
-                            ),
-                        )
-                    ]
+                    ow_option = RouteOption(
+                        strategy_name=f"Google Flights Canlı ({carrier_out}: {orig} ↔ {city_code})",
+                        outbound_legs=[
+                            TransportLeg(
+                                mode="flight",
+                                carrier=carrier_out,
+                                origin=orig,
+                                destination=city_code,
+                                departure_str=out_dep,
+                                arrival_str=out_arr,
+                                price_eur_per_person=float(best_out.price),
+                            )
+                        ],
+                        inbound_legs=[
+                            TransportLeg(
+                                mode="flight",
+                                carrier=carrier_in,
+                                origin=city_code,
+                                destination=orig,
+                                departure_str=in_dep,
+                                arrival_str=in_arr,
+                                price_eur_per_person=float(best_in.price),
+                            )
+                        ],
+                        is_border_hack=False,
+                        max_stops=stops,
+                        booking_hint_url=(
+                            f"https://www.google.com/travel/flights?q=Flights%20to%20{city_code}%20from%20{orig}%20on%20"
+                            f"{d_out_str}%20through%20{d_in_str}"
+                        ),
+                    )
+                    route_candidates.append(ow_option)
+
+                if valid_rt:
+                    best_rt = sorted(valid_rt, key=lambda x: x.price)[0]
+                    rt_price = float(best_rt.price)
+                    half_out = round(rt_price / 2.0, 2)
+                    half_in = round(rt_price - half_out, 2)
+
+                    carrier_rt = " / ".join(best_rt.airlines) if best_rt.airlines else "Google Flights"
+                    f_out = best_rt.flights[0]
+                    out_dep = f"{f_out.departure.date[2]:02d}.{f_out.departure.date[1]:02d} {f_out.departure.time[0]:02d}:{f_out.departure.time[1]:02d}"
+                    out_arr = f"{f_out.arrival.date[2]:02d}.{f_out.arrival.date[1]:02d} {f_out.arrival.time[0]:02d}:{f_out.arrival.time[1]:02d}"
+
+                    in_seg = None
+                    for seg in best_rt.flights[1:]:
+                        if getattr(seg.from_airport, "code", "") == city_code or getattr(seg.to_airport, "code", "") == orig:
+                            in_seg = seg
+                            break
+                    if in_seg:
+                        in_dep = f"{in_seg.departure.date[2]:02d}.{in_seg.departure.date[1]:02d} {in_seg.departure.time[0]:02d}:{in_seg.departure.time[1]:02d}"
+                        in_arr = f"{in_seg.arrival.date[2]:02d}.{in_seg.arrival.date[1]:02d} {in_seg.arrival.time[0]:02d}:{in_seg.arrival.time[1]:02d}"
+                    else:
+                        in_dep = f"{window.end_dt.strftime('%d.%m')} 19:45"
+                        in_arr = f"{window.end_dt.strftime('%d.%m')} 23:30"
+
+                    rt_option = RouteOption(
+                        strategy_name=f"Google Flights Canlı ({carrier_rt}: {orig} ↔ {city_code})",
+                        outbound_legs=[
+                            TransportLeg(
+                                mode="flight",
+                                carrier=carrier_rt,
+                                origin=orig,
+                                destination=city_code,
+                                departure_str=out_dep,
+                                arrival_str=out_arr,
+                                price_eur_per_person=half_out,
+                            )
+                        ],
+                        inbound_legs=[
+                            TransportLeg(
+                                mode="flight",
+                                carrier=carrier_rt,
+                                origin=city_code,
+                                destination=orig,
+                                departure_str=in_dep,
+                                arrival_str=in_arr,
+                                price_eur_per_person=half_in,
+                            )
+                        ],
+                        is_border_hack=False,
+                        max_stops=max(0, len(best_rt.flights) - 1),
+                        booking_hint_url=(
+                            f"https://www.google.com/travel/flights?q=Flights%20to%20{city_code}%20from%20{orig}%20on%20"
+                            f"{d_out_str}%20through%20{d_in_str}"
+                        ),
+                    )
+                    route_candidates.append(rt_option)
+
+                if route_candidates:
+                    best = min(route_candidates, key=lambda r: r.roundtrip_price_per_person_eur)
+                    return [best]
                 return []
 
             async def _fetch_airport_routes(orig: str) -> List[RouteOption]:
@@ -390,8 +615,8 @@ class DirectFlightScanner:
                 if cache_key in _LIVE_FLIGHT_CACHE:
                     return _LIVE_FLIGHT_CACHE[cache_key]
                 try:
-                    res_out, res_in = await asyncio.to_thread(_fetch_sync, orig)
-                    routes = _parse_routes(orig, res_out, res_in)
+                    res_out, res_in, res_rt = await asyncio.to_thread(_fetch_sync, orig)
+                    routes = _parse_routes(orig, res_out, res_in, res_rt)
                     _LIVE_FLIGHT_CACHE[cache_key] = routes
                     return routes
                 except Exception:

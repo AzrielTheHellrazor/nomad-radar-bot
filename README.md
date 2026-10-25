@@ -23,7 +23,7 @@ Türkiye'deki **resmi tatilleri**, **yarım günleri (28 Ekim öğleden sonra, b
 
 ### 1. Terminalde Anında Canlı Önizleme (Token Gerekmeden Test Edin)
 ```bash
-cd /Users/goktus/nomad-radar-bot
+cd nomad-radar-bot
 PYTHONPATH=. .venv/bin/python main.py --demo
 ```
 

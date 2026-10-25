@@ -1,7 +1,7 @@
 # NomadRadar: Akıllı Tatil, Köprü İzin ve Ucuz Seyahat Telegram Botu Tasarım Dokümanı
 
 **Tarih:** 2026-10-22  
-**Proje Dizini:** `/Users/goktus/nomad-radar-bot`  
+**Proje Dizini:** `nomad-radar-bot/`  
 **Mimari:** Modüler Python (`asyncio`, `python-telegram-bot`, `APScheduler`, `SQLite`, `Playwright`/`httpx`, `google-genai` Gemini SDK)
 
 ---
@@ -53,7 +53,7 @@ Bot aynı anda veya seçime bağlı olarak (`/mod solo`, `/mod cift`, `/mod ikis
 ## 3. Sistem Modülleri ve Dosya Yapısı
 
 ```text
-/Users/goktus/nomad-radar-bot/
+nomad-radar-bot/
 ├── config.py                     # Ortam değişkenleri, varsayılan bütçe ve çalışma ayarları
 ├── database.py                   # SQLite şeması (kullanıcı tercihleri, vize durumu, bildirim geçmişi)
 ├── models.py                     # Pydantic/Dataclass veri modelleri (TravelWindow, RouteOption, StayOption, DealPackage)

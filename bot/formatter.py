@@ -35,13 +35,25 @@ def format_deal_telegram_message(deal: DealPackage) -> str:
         else ""
     )
 
+    def _leg_icon(mode: str) -> str:
+        m = (mode or "").lower()
+        if m == "ferry":
+            return "⛴️"
+        elif m in ("bus", "night_bus"):
+            return "🚌"
+        elif m in ("train", "night_train"):
+            return "🚆"
+        elif m == "flight":
+            return "✈️"
+        return "▫️"
+
     out_legs_text = "\n".join(
-        f"  ▫️ <code>{html.escape(leg.departure_str)}</code> → <code>{html.escape(leg.arrival_str)}</code>\n"
+        f"  {_leg_icon(leg.mode)} <code>{html.escape(leg.departure_str)}</code> → <code>{html.escape(leg.arrival_str)}</code>\n"
         f"     <b>{html.escape(leg.origin)} → {html.escape(leg.destination)}</b> ({html.escape(leg.carrier)}) — <b>{leg.price_eur_per_person:.0f}€/kişi</b>"
         for leg in deal.route.outbound_legs
     )
     in_legs_text = "\n".join(
-        f"  ▫️ <code>{html.escape(leg.departure_str)}</code> → <code>{html.escape(leg.arrival_str)}</code>\n"
+        f"  {_leg_icon(leg.mode)} <code>{html.escape(leg.departure_str)}</code> → <code>{html.escape(leg.arrival_str)}</code>\n"
         f"     <b>{html.escape(leg.origin)} → {html.escape(leg.destination)}</b> ({html.escape(leg.carrier)}) — <b>{leg.price_eur_per_person:.0f}€/kişi</b>"
         for leg in deal.route.inbound_legs
     )
