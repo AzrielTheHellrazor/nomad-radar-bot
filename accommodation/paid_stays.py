@@ -77,6 +77,9 @@ CITY_STAY_RATES: Dict[str, Tuple[float, float]] = {
     "ARN": (26.0, 80.0),
     "GOT": (24.0, 75.0),
     "PUS": (18.0, 55.0),
+    "HND": (22.0, 58.0),
+    "KIX": (19.0, 52.0),
+    "FUK": (17.0, 48.0),
 }
 
 

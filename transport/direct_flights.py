@@ -79,6 +79,9 @@ DIRECT_ROUTE_PROFILES: Dict[str, Tuple[str, str, float]] = {
     "ARN": ("Pegasus / AJet / SAS", "SAW", 88.0),
     "GOT": ("Pegasus / SAS", "SAW", 85.0),
     "PUS": ("Korean Air / Asiana (Seul Aktarmalı)", "IST", 430.0),
+    "HND": ("China Southern / Korean Air / ANA", "IST", 455.0),
+    "KIX": ("China Southern / Qatar Airways / Asiana", "IST", 440.0),
+    "FUK": ("China Southern / Korean Air + Jeju Air", "IST", 435.0),
 }
 
 
@@ -267,6 +270,30 @@ class DirectFlightScanner:
             d_in_str = window.end_dt.strftime("%Y-%m-%d")
             earliest_hr = 13 if window.start_dt.hour == 13 else None
 
+            def _call_get_flights(q_obj):
+                if getattr(fast_flights.get_flights, "__module__", "").startswith("fast_flights"):
+                    from fast_flights.integrations.base import FetchIntegration
+                    from primp import Client
+
+                    class _ConsentBypassFetcher(FetchIntegration):
+                        def fetch_html(self, query_arg) -> str:
+                            client = Client(
+                                impersonate="chrome_145",
+                                impersonate_os="macos",
+                                referer=True,
+                                cookie_store=True,
+                            )
+                            params = query_arg.params() if hasattr(query_arg, "params") else {"q": query_arg}
+                            headers = {
+                                "Cookie": "SOCS=CAESHAgBEhJnd3NfMjAyMzA4MTAtMF9SQzIaAmVuIAEaBgiAo_CmBg; CONSENT=PENDING+987"
+                            }
+                            return client.get(
+                                "https://www.google.com/travel/flights", params=params, headers=headers
+                            ).text
+
+                    return fast_flights.get_flights(q_obj, integration=_ConsentBypassFetcher())
+                return fast_flights.get_flights(q_obj)
+
             def _fetch_sync(orig: str):
                 try:
                     q_out = fast_flights.create_query(
@@ -283,6 +310,7 @@ class DirectFlightScanner:
                         seat="economy",
                         passengers=fast_flights.Passengers(adults=1),
                         currency="EUR",
+                        language="en",
                     )
                     q_in = fast_flights.create_query(
                         flights=[
@@ -297,8 +325,9 @@ class DirectFlightScanner:
                         seat="economy",
                         passengers=fast_flights.Passengers(adults=1),
                         currency="EUR",
+                        language="en",
                     )
-                    return fast_flights.get_flights(q_out), fast_flights.get_flights(q_in)
+                    return _call_get_flights(q_out), _call_get_flights(q_in)
                 except Exception:
                     return None, None
 

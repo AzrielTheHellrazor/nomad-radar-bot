@@ -75,6 +75,9 @@ CITY_NAMES_TR: Dict[str, str] = {
     "ARN": "Stockholm",
     "GOT": "Göteborg",
     "PUS": "Busan",
+    "HND": "Tokyo (Haneda)",
+    "KIX": "Osaka (Kansai)",
+    "FUK": "Fukuoka",
 }
 
 
@@ -364,7 +367,7 @@ class VisaEngine:
             "JP": CountryRule(
                 code="JP",
                 name_tr="Japonya",
-                main_cities=["NRT"],
+                main_cities=["NRT", "HND", "KIX", "FUK"],
                 solo_visa=VisaCategory.VISA_FREE,
                 solo_visa_fee_eur=0.0,
                 solo_min_lead_days=0,
