@@ -455,19 +455,36 @@ async def test_tier1_r2_balkan_border_hop_dual_leg_live_ryanair_query(sample_win
 def test_tier1_r2_holiday_calculator_no_overlaps_and_extended_weekends():
     """
     R2.7: Turkish Holiday Calendar overlap fix & extended weekend windows:
-    - 2026-2027 holiday bridge windows must NOT overlap.
-    - Added 1-leave-day 3-night extended weekend windows (Thu-Sun and Fri-Mon).
+    - 2026-2027 holiday bridge windows must NOT overlap within the same duration tier.
+    - Zero duplicate window collisions (all (start_dt, end_dt) pairs are distinct).
+    - Added 1-leave-day 3-night extended weekend windows (Fri 19:00 - Mon 23:59).
     """
     calc = HolidayWindowCalculator()
     bridge_windows = calc._curated_bridge_windows()
 
-    # Check for overlaps between bridge windows
+    # Zero duplicate window collisions (distinct start_dt, end_dt pairs)
+    unique_pairs = {(w.start_dt, w.end_dt) for w in bridge_windows}
+    assert len(unique_pairs) == len(bridge_windows), "Duplicate (start_dt, end_dt) bridge windows found"
+
+    # Separate standard bridge windows (<= 9 nights) and 2-week long-haul bridge windows (>= 15 nights)
+    standard_bridges = [w for w in bridge_windows if w.nights < 12]
+    long_haul_bridges = [w for w in bridge_windows if w.nights >= 12]
+
+    # Check for overlaps between standard bridge windows
     overlapping_pairs = []
-    for i in range(len(bridge_windows)):
-        for j in range(i + 1, len(bridge_windows)):
-            w1 = bridge_windows[i]
-            w2 = bridge_windows[j]
+    for i in range(len(standard_bridges)):
+        for j in range(i + 1, len(standard_bridges)):
+            w1 = standard_bridges[i]
+            w2 = standard_bridges[j]
             # Check date range overlap
+            if not (w1.end_dt < w2.start_dt or w2.end_dt < w1.start_dt):
+                overlapping_pairs.append((w1.title, w2.title))
+
+    # Check for overlaps between 2-week long-haul bridge windows
+    for i in range(len(long_haul_bridges)):
+        for j in range(i + 1, len(long_haul_bridges)):
+            w1 = long_haul_bridges[i]
+            w2 = long_haul_bridges[j]
             if not (w1.end_dt < w2.start_dt or w2.end_dt < w1.start_dt):
                 overlapping_pairs.append((w1.title, w2.title))
 
@@ -475,6 +492,12 @@ def test_tier1_r2_holiday_calculator_no_overlaps_and_extended_weekends():
         pytest.xfail(f"Pending M3: HolidayWindowCalculator contains overlapping bridge windows: {overlapping_pairs}")
 
     assert len(overlapping_pairs) == 0, f"Overlapping bridge windows found: {overlapping_pairs}"
+
+    # Verify extended weekend windows are generated
+    windows = calc.get_upcoming_windows(reference_date=date(2026, 11, 2), days_ahead=30)
+    extended_weekends = [w for w in windows if "Uzatılmış Hafta Sonu" in w.title]
+    assert len(extended_weekends) >= 1
+    assert any(w.leave_days_required == 1.0 and w.nights == 3 for w in extended_weekends)
 
 
 # ----------------------------------------------------------------------------

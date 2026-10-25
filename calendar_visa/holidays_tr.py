@@ -45,6 +45,17 @@ class HolidayWindowCalculator:
                 nights=9,
                 is_bridge_holiday=True,
             ),
+            # 2027 Ramazan Bayramı 2 Haftalık Uzak Rota Köprüsü (Uzak rota / Japonya & Güney Kore vb. için)
+            # 5 Mart Cuma 19:00 -> 21 Mart Pazar 23:59 (6.5 gün izinle 16 gün / 16 gece!)
+            TravelWindow(
+                title="2027 Ramazan Bayramı 2 Haftalık Uzak Rota Köprüsü (6.5 Gün İzinle 16 Gün!)",
+                start_dt=datetime(2027, 3, 5, 19, 0),
+                end_dt=datetime(2027, 3, 21, 23, 59),
+                total_days=16.0,
+                leave_days_required=6.5,
+                nights=16,
+                is_bridge_holiday=True,
+            ),
             # 23 Nisan 2027 Cuma -> 22 Nisan Perşembe 19:00 çıkış -> 25 Nisan Pazar dönüş (0 izinle 3 gün!)
             TravelWindow(
                 title="23 Nisan 2027 Ulusal Egemenlik Tatili (0 Gün İzinle 3 Gün!)",
@@ -73,6 +84,17 @@ class HolidayWindowCalculator:
                 total_days=9.0,
                 leave_days_required=2.0,
                 nights=9,
+                is_bridge_holiday=True,
+            ),
+            # 2027 Post-Golden Week + Kurban Bayramı 2 Haftalık Uzak Rota Köprüsü (Uzak rota / Japonya & Güney Kore vb. için)
+            # 8 Mayıs Cumartesi 10:00 -> 23 Mayıs Pazar 23:59 (6 gün izinle 16 gün / 15 gece!)
+            TravelWindow(
+                title="2027 Post-Golden Week + Kurban Bayramı 2 Haftalık Uzak Rota Köprüsü (6 Gün İzinle 16 Gün!)",
+                start_dt=datetime(2027, 5, 8, 10, 0),
+                end_dt=datetime(2027, 5, 23, 23, 59),
+                total_days=16.0,
+                leave_days_required=6.0,
+                nights=15,
                 is_bridge_holiday=True,
             ),
             # 15 Temmuz 2027 Perşembe -> Cuma 1 gün izinle 4 gün tatil

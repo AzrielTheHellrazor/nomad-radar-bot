@@ -36,3 +36,35 @@ def test_weekend_and_new_year_bridge_windows():
     # 1 Ocak 2027 (Cuma) Yılbaşı tatili (Perşembe akşam 31 Aralık 19:00 -> 3 Ocak Pazar = 0 izinle 3 gün!)
     ny_windows = [w for w in windows if "Yılbaşı" in w.title or "1 Ocak" in w.title]
     assert len(ny_windows) >= 1
+
+
+def test_two_week_long_haul_holiday_bridges():
+    """
+    2 haftalık (~15-16 gece) uzun rota tatil köprüleri (Japonya, Güney Kore vb. için) testi:
+    - 2027 Ramazan Bayramı 2 Haftalık Uzak Rota Köprüsü (16 gece, 6.5 gün izinle 16 gün)
+    - 2027 Post-Golden Week + Kurban Bayramı 2 Haftalık Uzak Rota Köprüsü (15 gece, 6 gün izinle 16 gün)
+    """
+    calc = HolidayWindowCalculator()
+    windows = calc.get_upcoming_windows(reference_date=date(2027, 2, 15), days_ahead=120)
+
+    long_haul_windows = [w for w in windows if w.is_bridge_holiday and w.nights in (15, 16)]
+    assert len(long_haul_windows) == 2
+
+    ramazan_long = next((w for w in long_haul_windows if "Ramazan" in w.title), None)
+    assert ramazan_long is not None
+    assert ramazan_long.start_dt == datetime(2027, 3, 5, 19, 0)
+    assert ramazan_long.end_dt == datetime(2027, 3, 21, 23, 59)
+    assert ramazan_long.total_days == 16.0
+    assert ramazan_long.leave_days_required == 6.5
+    assert ramazan_long.nights == 16
+    assert ramazan_long.is_bridge_holiday is True
+
+    kurban_long = next((w for w in long_haul_windows if "Kurban" in w.title), None)
+    assert kurban_long is not None
+    assert kurban_long.start_dt == datetime(2027, 5, 8, 10, 0)
+    assert kurban_long.end_dt == datetime(2027, 5, 23, 23, 59)
+    assert kurban_long.total_days == 16.0
+    assert kurban_long.leave_days_required == 6.0
+    assert kurban_long.nights == 15
+    assert kurban_long.is_bridge_holiday is True
+
